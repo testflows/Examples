@@ -19,6 +19,12 @@ pip3 install -r requirements.txt
 python3 main.py
 ```
 
+### How to play
+
+* use `LEFT`/`RIGHT`/`DOWN` key to control player
+* use key `a` to jump
+* use key `s` to shoot firewall or run
+
 ## Running the tests
 
 ```bash

@@ -1,6 +1,6 @@
 Welcome to the **TestFlows Examples** repository! This is your playground for exploring automated testing with the [TestFlows](https://testflows.com) open-source testing framework.
 
-## 🛠️ Getting Started
+## ✨ Getting Started
 
 ```bash
 git clone https://github.com/testflows/Examples.git
@@ -21,6 +21,6 @@ cd Examples
 
 <div align="center">
 
-*Happy Testing! 🧪✨*
+*Happy Testing! 👽*
 
 </div>

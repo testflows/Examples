@@ -5,7 +5,7 @@ Welcome to the **TestFlows Examples** repository! This is your playground for ex
 ```bash
 git clone https://github.com/testflows/Examples.git
 cd Examples
-# Check out individual example READMEs for specific instructions! 📖
+# Check out individual example READMEs for specific instructions!
 ```
 
 ## 📚 Learn More

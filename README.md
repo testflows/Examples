@@ -19,8 +19,4 @@ cd Examples
 
 ---
 
-<div align="center">
-
-*Happy Testing! 👽*
-
-</div>
+Learn to write test programs, not just tests 👽

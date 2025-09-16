@@ -1,0 +1,2 @@
+testflows==2.4.19
+pygame==2.6.1

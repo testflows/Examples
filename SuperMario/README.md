@@ -5,7 +5,7 @@ This is a [TestFlows](https://testflows.com) example that demonstrates automated
 ## Credits
 
 * Original game code: https://github.com/marblexu/PythonSuperMario
-* Based on: https://github.com/justinmeister/Mario-Level-1.
+* Based on: https://github.com/justinmeister/Mario-Level-1
 
 ## Prerequisites
 

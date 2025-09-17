@@ -16,10 +16,10 @@ def argparser(parser):
     parser.add_argument("--save-video", action="store_true", help="save video")
 
 
-@TestFeature
+@TestModule
 @Name("super mario")
 @ArgumentParser(argparser)
-def regression(self, save_video=False):
+def module(self, save_video=False):
     """Run tests for the Super Mario Bros. game."""
 
     self.context.save_video = save_video
@@ -47,4 +47,4 @@ def regression(self, save_video=False):
 
 
 if main():
-    regression()
+    module()

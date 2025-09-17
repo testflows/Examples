@@ -33,7 +33,7 @@ def regression(self, save_video=False):
     with And("play the game for 3 frames"):
         actions.game.play(self.context.game, frames=3, model=self.context.model)
 
-    with Feature("no model"):
+    with Feature("classic"):
         Scenario("move right", run=load("tests.move_right", "scenario"))
         Scenario("move left", run=load("tests.move_left", "scenario"))
         Scenario("move jump", run=load("tests.move_jump", "scenario"))

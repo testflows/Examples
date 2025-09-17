@@ -1,3 +1,5 @@
+#! /usr/bin/env python3
+
 import os
 import sys
 
@@ -10,9 +12,17 @@ import actions.game
 import models.game
 
 
+def argparser(parser):
+    parser.add_argument("--save-video", action="store_true", help="save video")
+
+
 @TestFeature
-def regression(self):
+@Name("super mario")
+@ArgumentParser(argparser)
+def regression(self, save_video=False):
     """Run tests for the Super Mario Bros. game."""
+
+    self.context.save_video = save_video
 
     with Given("start the game"):
         self.context.game = actions.game.start()
@@ -23,10 +33,17 @@ def regression(self):
     with And("play the game for 3 frames"):
         actions.game.play(self.context.game, frames=3, model=self.context.model)
 
-    Scenario(run=load("tests.move_jump_with_model", "scenario"))
-    # Scenario(run=load("tests.move_right_with_model", "scenario"))
-    # Scenario(run=load("tests.move_left_with_model", "scenario"))
-    # Scenario(run=load("tests.dont_move_with_model", "scenario"))
+    with Feature("no model"):
+        Scenario("move right", run=load("tests.move_right", "scenario"))
+        Scenario("move left", run=load("tests.move_left", "scenario"))
+        Scenario("move jump", run=load("tests.move_jump", "scenario"))
+
+    with Feature("with model"):
+        pass
+        # Scenario("move jump", run=load("tests.move_jump_with_model", "scenario"))
+        # Scenario("move right", run=load("tests.move_right_with_model", "scenario"))
+        # Scenario("move left", run=load("tests.move_left_with_model", "scenario"))
+        # Scenario("dont move", run=load("tests.dont_move_with_model", "scenario"))
 
 
 if main():

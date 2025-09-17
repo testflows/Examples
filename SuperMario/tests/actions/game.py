@@ -235,4 +235,36 @@ def start(self, ready=True):
             wait_ready(game=game)
         yield game
     finally:
-        pg.quit()
+        with By("quitting game"):
+            pg.quit()
+
+
+@TestStep(Given)
+def setup(self, game, overlays=None):
+    """Common test setup and cleanup."""
+    overlays = overlays or []
+    base_frame = len(game.behavior)
+    try:
+        yield
+    finally:
+        if overlays:
+            with By("drawing overlays"):
+                overlay(
+                    game,
+                    [
+                        get_element(
+                            game,
+                            name,
+                            frame=(base_frame + offset) if offset > -1 else offset,
+                        )
+                        for name, offset in overlays
+                    ],
+                )
+
+        if self.context.save_video:
+            with By("saving video"):
+                save_video(
+                    game,
+                    path=f"{name.basename(self.parent.name).replace(' ', '_')}.gif",
+                    start=base_frame,
+                )

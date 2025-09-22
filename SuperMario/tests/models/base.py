@@ -10,10 +10,6 @@ class Model:
         element = elements[0] if elements else None
         return element
 
-    def get_mario(self, state):
-        """Find Mario in the specified state."""
-        return self.get("player", state)
-
     def is_key_pressed(self, state, key):
         """Return True if the given key is pressed in the state."""
         return state.keys.key_code(key) in state.keys

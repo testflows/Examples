@@ -7,29 +7,40 @@ class Mario(Model):
 
     def __init__(self, game):
         super().__init__(game)
+        # Movement constants
+        self.max_speed = 6
+        self.movement_startup_delay = 4
+        self.inertia_threshold = 7
 
     def get_position(self, state, axis="x"):
         """Return Mario's x-coordinate from the given state."""
+        mario = self.get("player", state)
         if axis == "x":
-            return self.get_mario(state).box.x
-        return self.get_mario(state).box.y
+            return mario.box.x
+        return mario.box.y
+
+    def get_positions(self, *states, axis="x"):
+        """Return Mario's positions from multiple states."""
+        return tuple(self.get_position(state, axis) for state in states)
 
     def is_standing(self, state, previous_state):
         """
         Determine if Mario was standing between two states.
         He is considered standing if his x-coordinate did not change.
         """
-        return self.get_position(state) == self.get_position(previous_state)
+        pos_current, pos_previous = self.get_positions(state, previous_state)
+        return pos_current == pos_previous
 
     def is_moving(self, state, previous_state, direction="right"):
         """
         Determine if Mario was moving right between two states.
         He is moving right if his x-coordinate increased.
         """
+        pos_current, pos_previous = self.get_positions(state, previous_state)
         if direction == "right":
-            return self.get_position(state) > self.get_position(previous_state)
+            return pos_current > pos_previous
         elif direction == "left":
-            return self.get_position(state) < self.get_position(previous_state)
+            return pos_current < pos_previous
         return False
 
     def is_jumping(self, state, previous_state):
@@ -37,9 +48,8 @@ class Mario(Model):
         Determine if Mario was jumping between two states.
         He is jumping if his y-coordinate decreased.
         """
-        return self.get_position(state, axis="y") < self.get_position(
-            previous_state, axis="y"
-        )
+        pos_current, pos_previous = self.get_positions(state, previous_state, axis="y")
+        return pos_current < pos_previous
 
     def assert_no_unintended_movement(self, now, before, direction="right"):
         """Assert that Mario did not move if the right or left key was not pressed."""
@@ -63,7 +73,7 @@ class Mario(Model):
         pos_before = self.get_position(before, axis="y")
         assert pos_now < pos_before, "Mario did not jump"
 
-    def assert_movement(self, now, before, max_speed=6, direction="right"):
+    def assert_movement(self, now, before, direction="right"):
         """
         Assert that Mario moved to the right or left and did not exceed max walking speed.
         """
@@ -76,9 +86,9 @@ class Mario(Model):
             debug("Mario should move left")
             assert pos_now < pos_before, "Mario did not move left"
         # Ensure Mario did not exceed the maximum speed.
-        self.assert_max_speed(now, before, max_speed=max_speed, direction=direction)
+        self.assert_max_speed(now, before, direction=direction)
 
-    def assert_max_speed(self, now, before, max_speed, direction="right"):
+    def assert_max_speed(self, now, before, direction="right"):
         """
         Assert that Mario did not exceed the maximum speed.
         """
@@ -91,15 +101,13 @@ class Mario(Model):
             movement = pos_before - pos_now
             debug(f"Mario moved left by {movement}")
         assert (
-            movement <= max_speed
-        ), f"Mario moved {direction} {movement} above its max speed {max_speed}"
+            movement <= self.max_speed
+        ), f"Mario moved {direction} {movement} above its max speed {self.max_speed}"
 
-    def has_started_moving_after_standing(
-        self, behavior, threshold=4, direction="right"
-    ):
+    def has_started_moving_after_standing(self, behavior, direction="right"):
         """
         Check the previous states to see if Mario has started moving after standing.
-        Returns True if the delay in movement is at least the threshold.
+        Returns True if the delay in movement is at least the startup delay threshold.
         """
         did_not_move_count = 1
         # 'right_before' is the state 3 steps back in the behavior list.
@@ -113,11 +121,9 @@ class Mario(Model):
                 break
             did_not_move_count += 1
             state_before = state
-        return did_not_move_count >= threshold
+        return did_not_move_count >= self.movement_startup_delay
 
-    def has_maintained_inertia(
-        self, behavior, previous_movement, threshold_frames=7, direction="right"
-    ):
+    def has_maintained_inertia(self, behavior, previous_movement, direction="right"):
         """
         Check whether Mario has maintained the same inertia speed for at least 'threshold_frames'
         consecutive frame pairs (starting from the pair (behavior[-3], behavior[-2])).
@@ -150,31 +156,23 @@ class Mario(Model):
             count += 1
             state_before = state
 
-        return count >= threshold_frames
+        return count >= self.inertia_threshold
 
-    def assert_inertia_movement(self, behavior, threshold=7, direction="right"):
+    def assert_inertia_movement(self, behavior, direction="right"):
         """
         Assert that Mario continues moving due to inertia even though the right or left key is not pressed.
 
         His current movement (from 'before' to 'now') must not exceed his previous movement
         (from 'right_before' to 'before'). Additionally, if Mario has maintained the same inertia
         speed for at least 'threshold_frames' consecutive frames, then he is expected to decelerate.
-
-        The behavior list is expected to have at least 3 states:
-          - behavior[-1] is "now"
-          - behavior[-2] is "before"
-          - behavior[-3] is "right_before"
         """
         if len(behavior) < 3:
             return
 
-        now = behavior[-1]
-        before = behavior[-2]
-        right_before = behavior[-3]
-
-        pos_now = self.get_position(now)
-        pos_before = self.get_position(before)
-        pos_right_before = self.get_position(right_before)
+        now, before, right_before = behavior[-1], behavior[-2], behavior[-3]
+        pos_now, pos_before, pos_right_before = self.get_positions(
+            now, before, right_before
+        )
 
         if direction == "right":
             current_movement = pos_now - pos_before
@@ -201,12 +199,12 @@ class Mario(Model):
 
         # Check if the same inertia speed should start decreasing.
         if self.has_maintained_inertia(
-            behavior, previous_movement, threshold, direction=direction
+            behavior, previous_movement, direction=direction
         ):
             # If so, then we expect deceleration (i.e. current movement must be less than previous).
             assert (
                 current_movement < previous_movement
-            ), f"Mario maintained the same inertia speed ({previous_movement}) for {threshold} frames; expected deceleration."
+            ), f"Mario maintained the same inertia speed ({previous_movement}); but expected deceleration."
 
         debug(
             f"Mario has {direction} inertia current speed {current_movement}, previous speed {previous_movement}"
@@ -226,7 +224,7 @@ class Mario(Model):
                 # Mario is already in motion. He should continue moving due to inertia,
                 # but his current movement should not exceed his previous movement.
                 # And if the same inertia speed is held for too long (7+ frames), he must decelerate.
-                self.assert_inertia_movement(behavior, threshold=7, direction=direction)
+                self.assert_inertia_movement(behavior, direction=direction)
             else:
                 # Mario is not moving and no key is pressed: he must remain stationary.
                 self.assert_no_unintended_movement(now, before, direction=direction)
@@ -239,7 +237,7 @@ class Mario(Model):
         elif self.is_standing(before, right_before):
             # If he was standing, allow a delay before he starts moving.
             if not self.has_started_moving_after_standing(
-                behavior, threshold=4, direction=direction
+                behavior, direction=direction
             ):
                 debug(f"Mario was standing and is preparing to move {direction}")
                 return
@@ -252,7 +250,6 @@ class Mario(Model):
             # before he can switch direction.
             self.assert_inertia_movement(
                 behavior,
-                threshold=7,
                 direction="left" if direction == "right" else "right",
             )
 
@@ -263,19 +260,19 @@ class Mario(Model):
 
     def expect_jump(self, behavior):
         """Expect Mario to jump when jump key is pressed."""
-        # Need at least three states: now, before, and right_before.
-        if len(behavior) < 3:
+        # Need at least two states: now, before
+        if len(behavior) < 2:
             return
 
-        now, before, right_before = behavior[-1], behavior[-2], behavior[-3]
+        now, before = behavior[-1], behavior[-2]
 
-        mario_before = self.get_mario(before)
+        pos_before = self.get_position(before)
 
         if self.has_collision(
-            mario_before, before, "bottom", objects=["box", "collider"]
+            pos_before, before, "bottom", objects=["box", "collider"]
         ):
             if not self.has_collision(
-                mario_before, before, "top", objects=["box", "collider"]
+                pos_before, before, "top", objects=["box", "collider"]
             ):
                 if self.is_key_pressed(now, "a"):
                     # If Mario is standing on a solid object, has room at the top, and the jump key is pressed, Mario should jump.

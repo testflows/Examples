@@ -6,7 +6,7 @@ class Game(Model):
     """Game model."""
 
     def __init__(self, game):
-        self.game = game
+        super().__init__(game)
         self.mario = Mario(game=game)
 
     def expect(self, behavior):

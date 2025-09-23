@@ -3,6 +3,7 @@ class Model:
 
     def __init__(self, game):
         self.game = game
+        self.solid_objects = ["box", "collider"]
 
     def get(self, name, state):
         """Find element in the specified state."""
@@ -23,11 +24,14 @@ class Model:
             element: The element to check collisions for.
             state: The game state, which contains state.boxes (a dictionary mapping keys to lists of box objects).
             direction (str): One of "left", "right", "top", or "bottom".
-            objects (iterable, optional): Specific keys from state.boxes to check. If None, all keys are used.
+            objects (iterable, optional): Specific keys from state.boxes to check. If None, all objects are used.
 
         Returns:
             bool: True if the element collides in the specified direction, False otherwise.
         """
+        if objects is None:
+            objects = self.solid_objects
+
         # Mapping from direction to the corresponding collision detection function.
         collision_funcs = {
             "left": self.game.vision.left_touch,

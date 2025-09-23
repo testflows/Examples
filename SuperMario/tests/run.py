@@ -39,11 +39,10 @@ def module(self, save_video=False):
         Scenario("move jump", run=load("tests.move_jump", "scenario"))
 
     with Feature("with model"):
-        pass
-        # Scenario("move jump", run=load("tests.move_jump_with_model", "scenario"))
-        # Scenario("move right", run=load("tests.move_right_with_model", "scenario"))
-        # Scenario("move left", run=load("tests.move_left_with_model", "scenario"))
-        # Scenario("dont move", run=load("tests.dont_move_with_model", "scenario"))
+        Scenario("move right", run=load("tests.move_right_with_model", "scenario"))
+        Scenario("move left", run=load("tests.move_left_with_model", "scenario"))
+        Scenario("dont move", run=load("tests.dont_move_with_model", "scenario"))
+        Scenario("move jump", run=load("tests.move_jump_with_model", "scenario"))
 
 
 if main():

@@ -266,13 +266,13 @@ class Mario(Model):
 
         now, before = behavior[-1], behavior[-2]
 
-        pos_before = self.get_position(before)
+        mario_before = self.get("player", before)
 
         if self.has_collision(
-            pos_before, before, "bottom", objects=["box", "collider"]
+            mario_before, before, "bottom", objects=["box", "collider"]
         ):
             if not self.has_collision(
-                pos_before, before, "top", objects=["box", "collider"]
+                mario_before, before, "top", objects=["box", "collider"]
             ):
                 if self.is_key_pressed(now, "a"):
                     # If Mario is standing on a solid object, has room at the top, and the jump key is pressed, Mario should jump.

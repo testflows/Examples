@@ -5,12 +5,14 @@ from .base import Model
 class Mario(Model):
     """Mario's behavior model."""
 
-    def __init__(self, game):
+    def __init__(self, game, level):
         super().__init__(game)
         # Movement constants
         self.max_speed = 6
         self.movement_startup_delay = 4
         self.inertia_threshold = 7
+        # Level model for boundary checking
+        self.level = level
 
     def get_position(self, state, axis="x"):
         """Return Mario's x-coordinate from the given state."""
@@ -79,14 +81,32 @@ class Mario(Model):
         """
         pos_now = self.get_position(now)
         pos_before = self.get_position(before)
+
+        # Check boundary conditions with Level model
+        mario_before = self.get("player", before)
+
         if direction == "right":
             debug("Mario should move right")
-            assert pos_now > pos_before, "Mario did not move right"
+            if self.level.should_stay_at_boundary(mario_before, direction):
+                # Mario should stay at boundary, not move further
+                assert (
+                    pos_now == pos_before
+                ), f"Mario should not move right past boundary"
+            else:
+                assert pos_now > pos_before, "Mario did not move right"
         elif direction == "left":
             debug("Mario should move left")
-            assert pos_now < pos_before, "Mario did not move left"
-        # Ensure Mario did not exceed the maximum speed.
-        self.assert_max_speed(now, before, direction=direction)
+            if self.level.should_stay_at_boundary(mario_before, direction):
+                # Mario should stay at boundary, not move further
+                assert (
+                    pos_now == pos_before
+                ), f"Mario should not move left past boundary"
+            else:
+                assert pos_now < pos_before, "Mario did not move left"
+
+        # Ensure Mario did not exceed the maximum speed (only if he actually moved)
+        if pos_now != pos_before:
+            self.assert_max_speed(now, before, direction=direction)
 
     def assert_max_speed(self, now, before, direction="right"):
         """

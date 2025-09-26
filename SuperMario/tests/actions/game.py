@@ -96,7 +96,7 @@ class Control(tools.Control):
                         if code in self.keys and not pressed[code]:
                             del self.keys[code]
                 else:
-                    if hasattr(event, "key"):
+                    if hasattr(event, "key") and event.key in self.keys:
                         del self.keys[event.key]
 
     def main(self):

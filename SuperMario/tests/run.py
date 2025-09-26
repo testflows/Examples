@@ -14,15 +14,22 @@ import models.game
 
 def argparser(parser):
     parser.add_argument("--save-video", action="store_true", help="save video")
+    parser.add_argument(
+        "--manual-play-seconds",
+        type=int,
+        default=30,
+        help="duration for manual play in seconds (default: 30)",
+    )
 
 
 @TestModule
 @Name("super mario")
 @ArgumentParser(argparser)
-def module(self, save_video=False):
+def module(self, save_video=False, manual_play_seconds=30):
     """Run tests for the Super Mario Bros. game."""
 
     self.context.save_video = save_video
+    self.context.manual_play_seconds = manual_play_seconds
 
     with Given("start the game"):
         self.context.game = actions.game.start()
@@ -43,6 +50,11 @@ def module(self, save_video=False):
         Scenario("move left", run=load("tests.move_left_with_model", "scenario"))
         Scenario("dont move", run=load("tests.dont_move_with_model", "scenario"))
         Scenario("move jump", run=load("tests.move_jump_with_model", "scenario"))
+
+    with Feature("manual"):
+        Scenario("play", test=load("tests.manual_play", "scenario"))(
+            play_seconds=manual_play_seconds
+        )
 
 
 if main():

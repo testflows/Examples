@@ -329,7 +329,7 @@ class Mario(Model):
             "frame_index": player.frame_index,
         }
 
-    def _predict_collision_adjusted_position(
+    def predict_collision_adjusted_position(
         self, mario_state, before_state, predicted_x, direction
     ):
         """Predict where Mario will be positioned after collision adjustment."""
@@ -1237,88 +1237,85 @@ class Mario(Model):
             f"Mario has {direction} inertia current speed {current_movement}, previous speed {previous_movement}; should maintain its speed or decelerate"
         )
 
-    def expect_move(self, behavior, direction):
-        """Expect Mario to move right or left using predictive physics."""
-        if len(behavior) < 2:
+    def debug_movement_context(
+        self, behavior, direction, keys, mario_internal, before_x, actual_x
+    ):
+        """Log comprehensive movement context for debugging."""
+        debug(
+            f"Checking direction '{direction}': key_pressed={keys.get(direction, False)}, keys={keys}"
+        )
+        debug(f"Mario internal state: {mario_internal}")
+        debug(f"Movement: {before_x} -> {actual_x}")
+
+        if mario_internal.get("walking_timer", 0) == 0:
+            debug("Walking timer not started yet - this might be the startup delay!")
+        else:
+            time_since_walk_start = mario_internal.get(
+                "current_time", 0
+            ) - mario_internal.get("walking_timer", 0)
+            debug(f"Time since walking started: {time_since_walk_start}ms")
+
+    def handle_no_key_pressed(self, behavior, direction):
+        """Handle movement when no directional key is pressed."""
+        if len(behavior) < 3:
             return
 
-        before, after = behavior[-2], behavior[-1]
+        mario_internal = self.internal_state()
+        current_vel = mario_internal.get("x_vel", 0)
 
-        # Get current state using our foundation
-        keys = self.get_pressed_keys(before)
-
-        # Check what should happen based on input
-        key_pressed = keys.get(direction, False)
-
-        # Debug: show key state
         debug(
-            f"Checking direction '{direction}': key_pressed={key_pressed}, keys={keys}"
+            f"Inertia check: current_vel={current_vel}, abs={abs(current_vel)}, direction={direction}"
         )
 
-        if not key_pressed:
-            # No key pressed - check for inertia or stationary behavior
-            if len(behavior) >= 3:
-                right_before = behavior[-3]
-                # Check if Mario is moving in ANY direction, not just the expected direction
-                mario_internal = self.internal_state()
-                current_vel = mario_internal.get("x_vel", 0)
-
-                debug(
-                    f"Inertia check: current_vel={current_vel}, abs={abs(current_vel)}, direction={direction}"
-                )
-                if abs(current_vel) > 0.1:  # Mario has velocity (inertia)
-                    actual_direction = "right" if current_vel > 0 else "left"
-                    debug(
-                        f"Mario has inertia: actual_direction={actual_direction}, expected_direction={direction}"
-                    )
-                    if actual_direction == direction:
-                        # Mario has inertia in the expected direction
-                        self.assert_inertia_movement(behavior, direction=direction)
-                    # If Mario has inertia in the opposite direction, that's fine - just return
-                else:
-                    # Mario has no significant velocity - should remain stationary
-                    # BUT check if this might be a collision adjustment scenario
-                    mario_state = self.get("player", before)
-                    mario_internal = self.internal_state()
-                    mario_state_name = mario_internal.get("state", "").lower()
-
-                    # If Mario might be adjusted due to current collision overlap (any state)
-                    if mario_state_name in ["jump", "fall", "walk", "standing"]:
-                        # Check if Mario is currently overlapping or very close to collision objects
-                        # Uses 3-pixel tolerance by default to handle floating-point precision issues
-                        current_pos = mario_state.box.x
-                        current_collision = self.collision.will_collide_with_objects(
-                            before, current_pos, mario_state.box.y
-                        )
-
-                        if current_collision:
-                            debug(
-                                f"Mario in collision scenario - predicting adjustment"
-                            )
-                            adjusted_pos = self._predict_collision_adjusted_position(
-                                mario_state, before, current_pos, direction
-                            )
-                            debug(
-                                f"Collision adjustment during {mario_state_name}: {current_pos} -> {adjusted_pos}"
-                            )
-                            expected_pos = adjusted_pos
-                            self.assert_movement(
-                                after,
-                                before,
-                                direction=direction,
-                                expected_pos=expected_pos,
-                            )
-                            return
-
-                    debug(
-                        f"Mario has no significant velocity ({current_vel}) - asserting no movement"
-                    )
-                    self.assert_no_unintended_movement(
-                        after, before, direction=direction
-                    )
+        if abs(current_vel) > 0.1:  # Mario has velocity (inertia)
+            actual_direction = "right" if current_vel > 0 else "left"
+            debug(
+                f"Mario has inertia: actual_direction={actual_direction}, expected_direction={direction}"
+            )
+            if actual_direction == direction:
+                self.assert_inertia_movement(behavior, direction=direction)
             return
 
-        # Key IS pressed - predict what should happen using our Physics class
+        # Mario has no significant velocity - check for collision adjustment
+        self.handle_stationary_collision_adjustment(behavior, direction)
+
+    def handle_stationary_collision_adjustment(self, behavior, direction):
+        """Handle collision adjustments when Mario is stationary."""
+        before, after = behavior[-2], behavior[-1]
+        mario_state = self.get("player", before)
+        mario_internal = self.internal_state()
+        mario_state_name = mario_internal.get("state", "").lower()
+
+        if mario_state_name in ["jump", "fall", "walk", "standing"]:
+            current_pos = mario_state.box.x
+            current_collision = self.collision.will_collide_with_objects(
+                before, current_pos, mario_state.box.y
+            )
+
+            if current_collision:
+                debug("Mario in collision scenario - predicting adjustment")
+                adjusted_pos = self.predict_collision_adjusted_position(
+                    mario_state, before, current_pos, direction
+                )
+                debug(
+                    f"Collision adjustment during {mario_state_name}: {current_pos} -> {adjusted_pos}"
+                )
+                self.assert_movement(
+                    after, before, direction=direction, expected_pos=adjusted_pos
+                )
+                return
+
+        # No collision adjustment needed - assert no movement
+        current_vel = mario_internal.get("x_vel", 0)
+        debug(
+            f"Mario has no significant velocity ({current_vel}) - asserting no movement"
+        )
+        self.assert_no_unintended_movement(after, before, direction=direction)
+
+    def get_movement_context(self, behavior, direction):
+        """Get all the context needed for movement prediction."""
+        before, after = behavior[-2], behavior[-1]
+        keys = self.get_pressed_keys(before)
         mario_internal = self.internal_state()
         mario_state = self.get("player", before)
 
@@ -1328,55 +1325,71 @@ class Mario(Model):
         before_x = self.get_position(before)
         actual_x = self.get_position(after)
 
-        # Check if this is a turnaround scenario (key pressed opposite to current velocity)
+        # Check for turnaround scenario
         current_vel = mario_internal.get("x_vel", 0)
-        is_turnaround = False
-        if (
-            direction == "right" and current_vel < -0.5
-        ):  # Right key but significant leftward velocity
-            is_turnaround = True
-        elif (
+        is_turnaround = (direction == "right" and current_vel < -0.5) or (
             direction == "left" and current_vel > 0.5
-        ):  # Left key but significant rightward velocity
-            is_turnaround = True
+        )
 
-        # Check if there are conditions preventing movement that our Physics class doesn't account for
+        # Check for blocking conditions
         mario_before = self.get("player", before)
         has_boundary_block = (
             self.level.should_stay_at_boundary(mario_before, direction)
             if hasattr(self, "level")
             else False
         )
-        # Check collision at predicted position, not current position
         has_collision_block = self.collision.will_collide_with_objects(
             before, predicted_x, mario_before.box.y
         )
 
-        # Also check if Mario is currently in a collision adjustment scenario
-        # This handles cases where Mario is very close to collision boundaries
-        mario_internal = self.internal_state()
-        mario_state_name = mario_internal.get("state", "").lower()
-        current_pos = mario_before.box.x
-
-        # Check if both left and right keys are pressed (canceling each other out)
+        # Check for both keys pressed
         both_keys_pressed = keys.get("left", False) and keys.get("right", False)
 
-        # Check if Mario is currently overlapping or very close to collision objects
-        # Uses 3-pixel tolerance by default to handle floating-point precision issues
+        return {
+            "before": before,
+            "after": after,
+            "keys": keys,
+            "mario_internal": mario_internal,
+            "mario_state": mario_state,
+            "predicted_x": predicted_x,
+            "before_x": before_x,
+            "actual_x": actual_x,
+            "is_turnaround": is_turnaround,
+            "has_boundary_block": has_boundary_block,
+            "has_collision_block": has_collision_block,
+            "both_keys_pressed": both_keys_pressed,
+        }
+
+    def handle_collision_adjustment(self, context):
+        """Unified collision adjustment handling."""
+        mario_before = context["mario_state"]
+        before = context["before"]
+        after = context["after"]
+        direction = context.get("direction", "right")
+        current_pos = mario_before.box.x
+
+        # Check current collision
         current_collision = self.collision.will_collide_with_objects(
             before, current_pos, mario_before.box.y
         )
 
-        debug(
-            f"Collision check at current position x={current_pos}: {current_collision}"
-        )
+        if current_collision:
+            debug("Mario in collision scenario - predicting adjustment")
+            adjusted_pos = self.predict_collision_adjusted_position(
+                mario_before, before, current_pos, direction
+            )
+            if adjusted_pos != current_pos:
+                debug(f"Collision adjustment: {current_pos} -> {adjusted_pos}")
+                self.assert_movement(
+                    after, before, direction=direction, expected_pos=adjusted_pos
+                )
+                return True
 
-        # Also check collision at the position Mario would move to if he had velocity
-        # This handles cases where Mario gets moved by velocity, hits collision, then gets adjusted
-        mario_internal_current = self.internal_state()
-        if mario_internal_current.get("x_vel", 0) == 0 and keys.get(direction):
-            # Mario has 0 velocity but key pressed - check where he would move with normal velocity
-            hypothetical_velocity = 6  # Typical Mario velocity
+        # Check hypothetical collision (Mario has zero velocity but key pressed)
+        mario_internal = context["mario_internal"]
+        keys = context["keys"]
+        if mario_internal.get("x_vel", 0) == 0 and keys.get(direction):
+            hypothetical_velocity = 6
             hypothetical_pos = current_pos + (
                 hypothetical_velocity
                 if direction == "right"
@@ -1385,297 +1398,240 @@ class Mario(Model):
             hypothetical_collision = self.collision.will_collide_with_objects(
                 before, hypothetical_pos, mario_before.box.y
             )
-            debug(
-                f"Hypothetical collision check at x={hypothetical_pos} (with velocity {hypothetical_velocity}): {hypothetical_collision}"
-            )
 
             if hypothetical_collision and not current_collision:
                 debug(
-                    f"Mario would hit collision if he had velocity - predicting adjustment"
+                    "Mario would hit collision if he had velocity - predicting adjustment"
                 )
-                collision_adjustment_pos = self._predict_collision_adjusted_position(
+                adjusted_pos = self.predict_collision_adjusted_position(
                     mario_before, before, hypothetical_pos, direction
                 )
                 debug(
-                    f"Hypothetical collision adjustment: {current_pos} -> {collision_adjustment_pos}"
+                    f"Hypothetical collision adjustment: {current_pos} -> {adjusted_pos}"
                 )
-                expected_pos = collision_adjustment_pos
                 self.assert_movement(
-                    after, before, direction=direction, expected_pos=expected_pos
+                    after, before, direction=direction, expected_pos=adjusted_pos
                 )
-                return
+                return True
 
-        # If Mario is overlapping or very close, predict collision adjustment
-        if current_collision:
+        return False
+
+    def handle_both_keys_pressed(self, context):
+        """Handle the case where both left and right keys are pressed."""
+        if not context["both_keys_pressed"]:
+            return False
+
+        mario_internal = context["mario_internal"]
+        if mario_internal.get("x_vel", 0) == 0:
             debug(
-                f"Key pressed but Mario in collision scenario - predicting adjustment"
+                "Both keys pressed with zero velocity - checking for collision adjustment"
             )
-            collision_adjustment_pos = self._predict_collision_adjusted_position(
-                mario_before, before, current_pos, direction
-            )
+            mario_after = self.get("player", context["after"])
+            current_pos = context["before_x"]
 
-            if collision_adjustment_pos != current_pos:
-                debug(
-                    f"Collision adjustment overrides normal movement: {current_pos} -> {collision_adjustment_pos}"
-                )
-                expected_pos = collision_adjustment_pos
-                self.assert_movement(
-                    after, before, direction=direction, expected_pos=expected_pos
-                )
-                return
-
-        # Special case: Both keys pressed (zero net velocity) but collision adjustment might still occur
-        if both_keys_pressed and mario_internal.get("x_vel", 0) == 0:
-            debug(
-                f"Both keys pressed with zero velocity - checking for collision adjustment"
-            )
-            # Check if Y movement causes collision that triggers X adjustment
-            mario_after = self.get("player", after)
             if mario_after and mario_after.box.x != current_pos:
                 final_x = mario_after.box.x
                 debug(f"Both-keys collision adjustment: {current_pos} -> {final_x}")
-                expected_pos = final_x
                 self.assert_movement(
-                    after, before, direction=None, expected_pos=expected_pos
+                    context["after"],
+                    context["before"],
+                    direction=None,
+                    expected_pos=final_x,
                 )
-                return
+                return True
 
-        # Debug: show what's preventing movement
-        debug(
-            f"Boundary block: {has_boundary_block}, Collision block: {has_collision_block}"
-        )
+        return False
 
-        # Additional debug: check collision at actual final position
-        mario_after = self.get("player", after)
-        if mario_after:
-            final_x = mario_after.box.x
-            final_y = mario_after.box.y
-            if final_x != current_pos:
-                debug(
-                    f"Mario actually moved to x={final_x}, y={final_y}, checking collision there"
-                )
-                final_collision = self.collision.will_collide_with_objects(
-                    before, final_x, final_y
-                )
-                debug(
-                    f"Collision at final position x={final_x}, y={final_y}: {final_collision}"
-                )
-                if final_collision:
-                    debug("Mario was moved by collision adjustment that we missed!")
+    def handle_opposite_movement(self, context, direction, behavior):
+        """Handle cases where Mario moves opposite to the expected direction."""
+        mario_after = self.get("player", context["after"])
+        if not mario_after:
+            return False
 
-                # Also check if Y movement caused the X collision
-                mario_internal = self.internal_state()
-                y_vel = mario_internal.get("y_vel", 0)
-                if y_vel != 0:
-                    predicted_y = mario_before.box.y + round(y_vel)
-                    debug(
-                        f"Mario is falling/jumping with y_vel={y_vel}, predicted_y={predicted_y}"
-                    )
-                    y_collision = self.collision.will_collide_with_objects(
-                        before, current_pos, predicted_y
-                    )
-                    debug(f"Collision at current X but predicted Y: {y_collision}")
-                    if y_collision:
-                        debug(
-                            "Y movement created collision that triggered X adjustment!"
-                        )
-        debug(f"Mario internal state: {mario_internal}")
-        debug(f"Predicted velocity would be: {predicted_x - before_x}")
-        debug(
-            f"Checking direction: {direction}, but Mario moved from {current_pos} to {final_x if mario_after else 'unknown'}"
-        )
+        before_x = context["before_x"]
+        actual_movement = mario_after.box.x - before_x
 
-        # Debug key state when there's unexpected movement
-        if mario_after and mario_after.box.x != current_pos:
-            actual_movement = mario_after.box.x - current_pos
-            expected_direction = "right" if direction == "right" else "left"
-            actual_direction = (
-                "right"
-                if actual_movement > 0
-                else "left" if actual_movement < 0 else "none"
+        if abs(actual_movement) < 1:
+            return False
+
+        actual_final_direction = "right" if actual_movement > 0 else "left"
+
+        if actual_final_direction != direction:
+            debug(
+                f"Mario moved {actual_final_direction} but {direction} key was pressed"
             )
-            if actual_direction != expected_direction and actual_direction != "none":
+
+            if context["is_turnaround"]:
                 debug(
-                    f"UNEXPECTED OPPOSITE MOVEMENT: Expected {expected_direction}, got {actual_direction}"
+                    f"Turnaround in progress: {direction} key pressed but Mario moves {actual_final_direction}"
                 )
-                debug(f"Full key state: {keys}")
-                debug(f"Both keys pressed: {both_keys_pressed}")
+            else:
                 debug(
-                    f"Movement: {current_pos} -> {mario_after.box.x} ({actual_movement:+d} pixels)"
+                    f"Collision adjustment: {direction} key pressed but Mario moved {actual_final_direction}"
                 )
 
-        # Debug: check if we need to account for walking timer
-        if mario_internal.get("walking_timer", 0) == 0:
-            debug("Walking timer not started yet - this might be the startup delay!")
-        else:
-            time_since_walk_start = mario_internal.get(
-                "current_time", 0
-            ) - mario_internal.get("walking_timer", 0)
-            debug(f"Time since walking started: {time_since_walk_start}ms")
+            # Validate using actual direction
+            self.assert_movement(
+                context["after"],
+                context["before"],
+                direction=actual_final_direction,
+                behavior=behavior,
+            )
+            return True
 
-        # Round predicted position to whole pixels (game uses round())
-        predicted_x_pixels = round(predicted_x)
+        return False
 
-        # Check if physics predicts movement in whole pixels, but account for blocks
-        will_move = (
-            abs(predicted_x_pixels - before_x) >= 1
-            and not has_boundary_block
-            and not has_collision_block
+    def handle_unexpected_movement(self, context, direction):
+        """Handle unexpected movement when physics predicts no movement."""
+        before_x = context["before_x"]
+        actual_x = context["actual_x"]
+
+        if abs(actual_x - before_x) <= 1:
+            return False
+
+        debug(f"Unexpected movement detected: {before_x} -> {actual_x}")
+
+        # Check for opposite movement
+        actual_movement = actual_x - before_x
+        expected_right = direction == "right"
+        actual_right = actual_movement > 0
+
+        if expected_right != actual_right:
+            debug(
+                "Mario moved opposite to expected direction - likely collision adjustment"
+            )
+            actual_direction = "right" if actual_right else "left"
+            self.assert_movement(
+                context["after"],
+                context["before"],
+                direction=actual_direction,
+                expected_pos=actual_x,
+            )
+            return True
+
+        # Check for both keys pressed
+        if context["both_keys_pressed"]:
+            debug("Both keys pressed - allowing movement due to collision adjustment")
+            self.assert_movement(
+                context["after"],
+                context["before"],
+                direction=None,
+                expected_pos=actual_x,
+            )
+            return True
+
+        # Check for small residual movement
+        if abs(actual_x - before_x) <= self.residual_movement_tolerance:
+            debug(
+                f"Small residual movement within tolerance ({self.residual_movement_tolerance}px)"
+            )
+            return True
+
+        return False
+
+    def expect_move(self, behavior, direction):
+        """Expect Mario to move right or left using predictive physics."""
+        if len(behavior) < 2:
+            return
+
+        # Get current state
+        keys = self.get_pressed_keys(behavior[-2])
+        key_pressed = keys.get(direction, False)
+
+        # Handle no key pressed - check for inertia or collision adjustment
+        if not key_pressed:
+            self.handle_no_key_pressed(behavior, direction)
+            return
+
+        # Key IS pressed - get movement context and predict
+        context = self.get_movement_context(behavior, direction)
+        context["direction"] = direction  # Add direction to context
+
+        # Debug the movement context
+        self.debug_movement_context(
+            behavior,
+            direction,
+            context["keys"],
+            context["mario_internal"],
+            context["before_x"],
+            context["actual_x"],
         )
 
-        if has_collision_block:
-            # Mario will be moved by collision adjustment, not by his intended movement
-            # Find where Mario will be positioned after collision adjustment
-            adjusted_x = self._predict_collision_adjusted_position(
-                mario_before, before, predicted_x, direction
+        # Handle special cases first
+        if self.handle_collision_adjustment(context):
+            return
+
+        if self.handle_both_keys_pressed(context):
+            return
+
+        # Check if physics predicts movement
+        predicted_x_pixels = round(context["predicted_x"])
+        will_move = (
+            abs(predicted_x_pixels - context["before_x"]) >= 1
+            and not context["has_boundary_block"]
+            and not context["has_collision_block"]
+        )
+
+        if context["has_collision_block"]:
+            # Handle collision-blocked movement
+            adjusted_x = self.predict_collision_adjusted_position(
+                context["mario_state"],
+                context["before"],
+                context["predicted_x"],
+                direction,
             )
             debug(
                 f"Collision detected - Mario will be adjusted to position {adjusted_x}"
             )
 
-            # Check if the adjusted position is different from current position
-            if abs(adjusted_x - before_x) >= 1:
+            if abs(adjusted_x - context["before_x"]) >= 1:
                 debug(
-                    f"Collision adjustment moves Mario from {before_x} to {adjusted_x}"
+                    f"Collision adjustment moves Mario from {context['before_x']} to {adjusted_x}"
                 )
                 self.assert_movement(
-                    after,
-                    before,
+                    context["after"],
+                    context["before"],
                     direction=direction,
-                    behavior=behavior,
                     expected_pos=adjusted_x,
                 )
             else:
-                debug(f"Collision adjustment keeps Mario at {before_x}")
+                debug(f"Collision adjustment keeps Mario at {context['before_x']}")
                 tolerance = 1
                 assert (
-                    abs(actual_x - before_x) <= tolerance
-                ), f"Mario should not move {direction} due to collision but moved from {before_x} to {actual_x}"
+                    abs(context["actual_x"] - context["before_x"]) <= tolerance
+                ), f"Mario should not move {direction} due to collision but moved from {context['before_x']} to {context['actual_x']}"
+
         elif will_move:
-            # Physics predicts Mario should move - validate movement
-            actual_direction = "right" if predicted_x_pixels > before_x else "left"
+            # Physics predicts movement - handle it
             debug(
-                f"Physics predicts {actual_direction} movement: {before_x} -> {predicted_x} (rounded: {predicted_x_pixels})"
+                f"Physics predicts {direction} movement: {context['before_x']} -> {context['predicted_x']} (rounded: {predicted_x_pixels})"
             )
 
-            # Check if Mario actually moved in the opposite direction
-            mario_after = self.get("player", after)
-            actual_final_direction = None
-            if mario_after:
-                actual_movement = mario_after.box.x - before_x
-                if abs(actual_movement) >= 1:
-                    actual_final_direction = "right" if actual_movement > 0 else "left"
+            if self.handle_opposite_movement(context, direction, behavior):
+                return
 
-            # Handle opposite movement (either turnaround or collision adjustment)
-            if actual_final_direction and actual_final_direction != direction:
-                debug(
-                    f"Mario moved {actual_final_direction} but {direction} key was pressed"
-                )
+            # Normal movement validation
+            self.assert_movement(
+                context["after"],
+                context["before"],
+                direction=direction,
+                behavior=behavior,
+            )
 
-                if is_turnaround:
-                    # Turnaround scenario: Mario moves opposite to key direction due to inertia
-                    debug(
-                        f"Turnaround in progress: {direction} key pressed but Mario moves {actual_direction}"
-                    )
-                else:
-                    # Collision adjustment: Mario moved opposite due to collision forces
-                    debug(
-                        f"Collision adjustment: {direction} key pressed but Mario moved {actual_final_direction}"
-                    )
-
-                # Use the actual movement direction for validation
-                actual_direction = actual_final_direction
-
-                # Check if the actual movement direction is blocked by boundaries
-                mario_before = self.get("player", before)
-                actual_boundary_block = (
-                    self.level.should_stay_at_boundary(mario_before, actual_direction)
-                    if hasattr(self, "level")
-                    else False
-                )
-                # Check collision in the actual movement direction
-                actual_predicted_x = mario_after.box.x if mario_after else before_x
-                actual_collision_block = self.collision.will_collide_with_objects(
-                    before, actual_predicted_x, mario_before.box.y
-                )
-
-                if actual_boundary_block or actual_collision_block:
-                    # Movement blocked - Mario should stay stationary
-                    debug(
-                        f"Turnaround movement blocked by boundary/collision - Mario should stay at {before_x}"
-                    )
-                    tolerance = 1
-                    assert (
-                        abs(actual_x - before_x) <= tolerance
-                    ), f"Mario should not move due to boundary/collision but moved from {before_x} to {actual_x}"
-                else:
-                    # Validate the actual movement direction, not the expected key direction
-                    self.assert_movement(
-                        after, before, direction=actual_direction, behavior=behavior
-                    )
-            else:
-                # Normal case: validate using the expected direction parameter
-                self.assert_movement(
-                    after, before, direction=direction, behavior=behavior
-                )
         else:
-            # Physics predicts Mario should NOT move (not enough for a full pixel)
+            # Physics predicts NO movement
             debug(
-                f"Physics predicts NO {direction} movement: {before_x} -> {predicted_x} (rounded: {predicted_x_pixels})"
+                f"Physics predicts NO {direction} movement: {context['before_x']} -> {context['predicted_x']} (rounded: {predicted_x_pixels})"
             )
 
-            # Check if this might be a both-keys-pressed scenario or residual movement
-            if abs(actual_x - before_x) > 1:
-                debug(f"Unexpected movement detected: {before_x} -> {actual_x}")
-                debug(f"Both keys pressed: {both_keys_pressed}")
-                debug(f"Full key state: {keys}")
+            if self.handle_unexpected_movement(context, direction):
+                return
 
-                # Check if Mario moved in the opposite direction (collision adjustment)
-                actual_movement = actual_x - before_x
-                expected_right = direction == "right"
-                actual_right = actual_movement > 0
-                opposite_movement = expected_right != actual_right
-
-                if opposite_movement:
-                    debug(
-                        f"Mario moved opposite to expected direction - likely collision adjustment"
-                    )
-                    debug(
-                        f"Expected: {direction}, Actual: {'right' if actual_right else 'left'}"
-                    )
-                    # Allow the opposite movement - it's due to collision adjustment
-                    expected_pos = actual_x
-                    actual_direction = "right" if actual_right else "left"
-                    self.assert_movement(
-                        after,
-                        before,
-                        direction=actual_direction,
-                        expected_pos=expected_pos,
-                    )
-                    return
-
-                # Check if both keys are pressed (canceling each other out)
-                if both_keys_pressed:
-                    debug(
-                        "Both keys pressed - allowing movement due to collision adjustment or residual momentum"
-                    )
-                    expected_pos = actual_x
-                    self.assert_movement(
-                        after, before, direction=None, expected_pos=expected_pos
-                    )
-                    return
-
-                # Check for residual movement (small movements due to floating-point precision or collision micro-adjustments)
-                if abs(actual_x - before_x) <= self.residual_movement_tolerance:
-                    debug(
-                        f"Small residual movement within tolerance ({self.residual_movement_tolerance}px)"
-                    )
-                    return
-
+            # Final assertion - Mario should not move
             tolerance = 1
             assert (
-                abs(actual_x - before_x) <= tolerance
-            ), f"Mario should not move {direction} but moved from {before_x} to {actual_x}"
+                abs(context["actual_x"] - context["before_x"]) <= tolerance
+            ), f"Mario should not move {direction} but moved from {context['before_x']} to {context['actual_x']}"
 
     def is_jump_initiated(self, behavior):
         """

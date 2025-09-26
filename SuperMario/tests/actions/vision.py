@@ -167,7 +167,7 @@ class Vision:
 
     def collides(self, box1, box2):
         """
-        Check if two rectangles overlap (same logic as pygame's colliderect).
+        Check if two rectangles overlap using pygame's actual collision detection.
 
         Args:
             box1 (pg.Rect): The first rectangle.
@@ -176,12 +176,15 @@ class Vision:
         Returns:
             bool: True if the rectangles overlap, False otherwise.
         """
-        return (
-            box1.left < box2.right
-            and box1.right > box2.left
-            and box1.top < box2.bottom
-            and box1.bottom > box2.top
-        )
+        # Use pygame's actual collision detection instead of custom logic
+        # This ensures 100% consistency with the game's collision behavior
+        import pygame as pg
+
+        if not isinstance(box1, pg.Rect):
+            box1 = pg.Rect(box1.x, box1.y, box1.width, box1.height)
+        if not isinstance(box2, pg.Rect):
+            box2 = pg.Rect(box2.x, box2.y, box2.width, box2.height)
+        return box1.colliderect(box2)
 
     def adjust_box(self, box, viewport):
         """Adjust the box coordinates to the viewport."""

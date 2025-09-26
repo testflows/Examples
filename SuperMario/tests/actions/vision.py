@@ -165,6 +165,24 @@ class Vision:
 
         return horizontal_touch and (vertical_overlap > 0)
 
+    def collides(self, box1, box2):
+        """
+        Check if two rectangles overlap (same logic as pygame's colliderect).
+
+        Args:
+            box1 (pg.Rect): The first rectangle.
+            box2 (pg.Rect): The second rectangle.
+
+        Returns:
+            bool: True if the rectangles overlap, False otherwise.
+        """
+        return (
+            box1.left < box2.right
+            and box1.right > box2.left
+            and box1.top < box2.bottom
+            and box1.bottom > box2.top
+        )
+
     def adjust_box(self, box, viewport):
         """Adjust the box coordinates to the viewport."""
         x, y, w, h = box

@@ -67,14 +67,53 @@ class Physics:
                         "Very recent walk start - Mario may not move immediately due to rapid alternation"
                     )
                     return current_pos  # No movement predicted for very rapid changes
+                elif (
+                    time_since_walk_start < 150
+                ):  # Moderate delay after direction change
+                    debug(
+                        f"Direction change stabilization period: {time_since_walk_start}ms - checking for delayed startup"
+                    )
+                    # For moderate delays (50-150ms), Mario might still be transitioning from opposite direction
+                    # Use normal acceleration instead of collision recovery velocity
+                    if keys.get("right") or keys.get("left"):
+                        debug(
+                            "Using normal startup acceleration instead of collision recovery"
+                        )
+                        new_vel = self.walk_accel  # 0.15 instead of 5.0
+                        debug(f"Startup acceleration velocity: {new_vel}")
+                        if round(new_vel) == 0:
+                            debug(
+                                "Startup velocity rounds to 0 - no movement predicted"
+                            )
+                            return current_pos
+                        predicted_pos = current_pos + (
+                            round(new_vel) if keys.get("right") else -round(new_vel)
+                        )
+                        debug(
+                            f"Gradual startup movement: {current_pos} -> {predicted_pos}"
+                        )
+                        return predicted_pos
 
             if keys.get("right"):
                 if not is_fresh_start and mario_state_name == "walk":
-                    # Collision recovery in walking state - game might restore higher velocity
-                    new_vel = 5.0
-                    debug(
-                        f"Walk collision recovery detected - using velocity {new_vel}"
-                    )
+                    # Check if this might be a post-turnaround scenario
+                    # Mario has x_vel=0 but may have recently had leftward velocity
+                    if (
+                        current_vel == 0 and time_since_walk_start < 200
+                    ):  # Recent direction change
+                        debug(
+                            "Post-turnaround scenario detected - using normal cal_vel instead of collision recovery"
+                        )
+                        new_vel = self.walk_accel  # Use normal acceleration
+                        debug(
+                            f"Post-turnaround cal_vel(0, 6, {self.walk_accel}) = {new_vel}"
+                        )
+                    else:
+                        # Normal collision recovery in walking state - game might restore higher velocity
+                        new_vel = 5.0
+                        debug(
+                            f"Walk collision recovery detected - using velocity {new_vel}"
+                        )
                 elif mario_state_name == "jump" or mario_state_name == "fall":
                     # Mario uses same acceleration logic as walking during jumps/falls
                     if keys.get("action", False):

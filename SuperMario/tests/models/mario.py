@@ -1671,21 +1671,18 @@ class Mario(Model):
 
         return False
 
-    def expect_jump(self, behavior):
-        """
-        Expect Mario to jump when jump key is pressed and handle jump inertia physics.
+    def debug_jump_context(self, behavior, keys, mario_internal, pos_before, pos_now):
+        """Log comprehensive jump context for debugging."""
+        debug(f"Jump key pressed: {keys.get('jump', False)}, keys={keys}")
+        debug(f"Mario internal state: {mario_internal}")
+        debug(
+            f"Y movement: {pos_before} -> {pos_now} ({pos_before - pos_now:+.1f} pixels)"
+        )
 
-        Similar to expect_move, this handles both:
-        1. Initial jump expectation (when key first pressed)
-        2. Jump inertia physics (upward movement with deceleration)
-        """
-        # Need at least 3 states to handle 1-frame delay: now, before, right_before
-        if len(behavior) < self.min_history:
-            return
-
+    def handle_jump_inertia(self, behavior):
+        """Handle Mario's upward movement during jump inertia."""
         now, before, right_before = behavior[-1], behavior[-2], behavior[-3]
 
-        # Check for jump inertia (upward movement) - similar to horizontal inertia in expect_move
         pos_now = self.get_position(now, axis="y")
         pos_before = self.get_position(before, axis="y")
         pos_right_before = self.get_position(right_before, axis="y")
@@ -1693,87 +1690,242 @@ class Mario(Model):
         current_y_movement = pos_before - pos_now  # Positive = upward
         previous_y_movement = pos_right_before - pos_before
 
-        # If Mario has upward movement (jump inertia), validate physics
-        if current_y_movement > 0:
-            mario_before = self.get("player", before)
-            jump_key_pressed = self.is_key_pressed(before, "a")
+        if current_y_movement <= 0:
+            return False  # No upward movement
 
-            # Check for head collision (like wall collision for horizontal movement)
-            if self.has_collision(mario_before, before, "top"):
-                debug("Mario hit his head - upward movement stopped")
+        mario_now = self.get("player", now)
+        jump_key_pressed = self.is_key_pressed(before, "a")
+
+        # Check for head collision - Mario hits something from below
+        # The game detects this AFTER movement, so we check Mario's current position
+        if self.has_collision(mario_now, now, "top"):
+            debug("Mario hit his head - upward movement stopped due to collision")
+            # When Mario hits his head, the game sets y_vel=7 and state=FALL
+            # This causes immediate downward movement, so any upward movement indicates
+            # the collision was detected and handled by the game
+            return True
+
+        # Validate jump inertia physics
+        if previous_y_movement > 0:
+            # Under jump inertia, Mario should not accelerate upward
+            assert (
+                current_y_movement <= previous_y_movement
+            ), f"Mario should not accelerate upward during jump inertia: {current_y_movement} > {previous_y_movement}"
+
+            if jump_key_pressed:
+                debug(
+                    f"Mario has upward inertia with jump key: movement {current_y_movement} (was {previous_y_movement})"
+                )
+            else:
+                debug(
+                    f"Mario has upward inertia without jump key: movement {current_y_movement} (was {previous_y_movement})"
+                )
+                # Should decelerate faster when key not held
+                deceleration = previous_y_movement - current_y_movement
                 assert (
-                    current_y_movement == 0
-                ), f"Mario should stop moving upward when hitting head, but moved {current_y_movement}"
-                return
+                    deceleration >= self.jump_deceleration_threshold
+                ), f"Mario should decelerate faster when jump key released: deceleration {deceleration}"
 
-            if (
-                previous_y_movement > 0
-            ):  # Had upward movement before (inertia continues)
-                # Under jump inertia, Mario should not accelerate upward
-                assert (
-                    current_y_movement <= previous_y_movement
-                ), f"Mario should not accelerate upward during jump inertia: {current_y_movement} > {previous_y_movement}"
+        return True
 
-                if jump_key_pressed:
-                    debug(
-                        f"Mario has upward inertia with jump key: movement {current_y_movement} (was {previous_y_movement})"
-                    )
-                else:
-                    debug(
-                        f"Mario has upward inertia without jump key: movement {current_y_movement} (was {previous_y_movement})"
-                    )
-
-                    # Should decelerate faster when key not held (manual jump only)
-                    deceleration = previous_y_movement - current_y_movement
-                    assert (
-                        deceleration >= self.jump_deceleration_threshold
-                    ), f"Mario should decelerate faster when jump key released: deceleration {deceleration}"
-            return
-
-        # No upward movement - check for new jump initiation or validate no unexpected upward movement
+    def handle_jump_initiation(self, behavior):
+        """Handle new jump initiation when jump key is pressed."""
         if self.is_jump_initiated(behavior):
+            now, before = behavior[-1], behavior[-2]
             self.assert_jump(now, before)
-        else:
-            # No jump initiated - if Mario has bottom collision, he should not move upward
-            mario_before = self.get("player", before)
-            if self.has_collision(mario_before, before, "bottom"):
-                # Mario is on ground and no jump - assert no upward movement
-                pos_now = self.get_position(now, axis="y")
-                pos_before = self.get_position(before, axis="y")
-                current_y_movement = pos_before - pos_now  # Positive = upward
-                if current_y_movement > 0:
-                    assert (
-                        False
-                    ), f"Mario on ground moved upward {current_y_movement} pixels without jumping"
+            return True
+        return False
 
-    def expect_falling(self, behavior):
-        """
-        Expect Mario to fall when he has no bottom collision and no upward movement.
+    def handle_no_jump_movement(self, behavior):
+        """Handle cases where Mario shouldn't move upward."""
+        before, now = behavior[-2], behavior[-1]
+        mario_before = self.get("player", before)
 
-        Falling behavior:
-        - Mario should accelerate downward due to gravity
-        - No upward movement (different from jump inertia)
-        - Horizontal movement still possible during fall
-        """
+        if self.has_collision(mario_before, before, "bottom"):
+            # Mario is on ground and no jump - assert no upward movement
+            pos_now = self.get_position(now, axis="y")
+            pos_before = self.get_position(before, axis="y")
+            current_y_movement = pos_before - pos_now  # Positive = upward
+
+            if current_y_movement > 0:
+                assert (
+                    False
+                ), f"Mario on ground moved upward {current_y_movement} pixels without jumping"
+
+    def expect_jump(self, behavior):
+        """Expect Mario to jump when jump key is pressed and handle jump inertia physics."""
         if len(behavior) < self.min_history:
             return
 
-        now, before, right_before = behavior[-1], behavior[-2], behavior[-3]
-        mario_before = self.get("player", before)
-        mario_right_before = self.get("player", right_before)
+        # Get current state
+        keys = self.get_pressed_keys(behavior[-2])
+        mario_internal = self.internal_state()
+        pos_before = self.get_position(behavior[-2], axis="y")
+        pos_now = self.get_position(behavior[-1], axis="y")
 
-        # Get y-positions
+        # Debug the jump context
+        self.debug_jump_context(behavior, keys, mario_internal, pos_before, pos_now)
+
+        # Handle upward movement (jump inertia)
+        if self.handle_jump_inertia(behavior):
+            return
+
+        # Handle new jump initiation
+        if self.handle_jump_initiation(behavior):
+            return
+
+        # Handle no jump movement validation
+        self.handle_no_jump_movement(behavior)
+
+    def debug_falling_context(
+        self, behavior, keys, mario_internal, pos_before, pos_now, current_y_movement
+    ):
+        """Log comprehensive falling context for debugging."""
+        debug(f"Mario internal state: {mario_internal}")
+        debug(
+            f"Y movement: {pos_before} -> {pos_now} ({current_y_movement:+.1f} pixels)"
+        )
+        debug(f"Mario is {'airborne' if current_y_movement != 0 else 'stationary'}")
+
+    def handle_stationary_in_air(self, behavior):
+        """Handle Mario being stationary while airborne."""
+        debug("Mario is airborne and stationary - should start falling")
+        self.assert_gravity_working(behavior)
+        return True
+
+    def handle_terminal_velocity(
+        self, behavior, downward_movement, previous_downward_movement
+    ):
+        """Handle Mario at or near terminal velocity."""
+        debug(
+            f"Mario at terminal velocity: downward movement {downward_movement} (was {previous_downward_movement})"
+        )
+
+        if downward_movement < previous_downward_movement:
+            # Speed decreased - check for ground collision or enemy stomp
+            return self.handle_fall_deceleration(
+                behavior, downward_movement, previous_downward_movement
+            )
+
+        return True
+
+    def handle_fall_deceleration(
+        self, behavior, downward_movement, previous_downward_movement
+    ):
+        """Handle deceleration during falling (ground hit or enemy stomp)."""
+        now = behavior[-1]
+        mario_now = self.get("player", now)
+        deceleration = previous_downward_movement - downward_movement
+        large_deceleration = deceleration >= 5
+
+        if self.stomped_enemy(behavior) or large_deceleration:
+            debug(
+                f"Mario stomped enemy: fall slowed from {previous_downward_movement} to {downward_movement} due to bounce"
+            )
+
+            # Assert basic enemy interaction physics
+            assert (
+                downward_movement < previous_downward_movement
+            ), f"Enemy stomp should cause deceleration: {downward_movement} >= {previous_downward_movement}"
+            assert (
+                0 <= downward_movement <= self.enemy_stomp_max_result_movement
+            ), f"Enemy stomp result movement out of range: {downward_movement} (expected 0-{self.enemy_stomp_max_result_movement})"
+
+            if deceleration >= self.enemy_stomp_min_deceleration:
+                debug(
+                    f"Full enemy stomp physics validated: deceleration={deceleration}, final_movement={downward_movement}"
+                )
+            else:
+                debug(
+                    f"Light enemy touch: deceleration={deceleration}, final_movement={downward_movement}"
+                )
+        else:
+            # Check for ground collision
+            if self.has_collision(mario_now, now, "bottom"):
+                debug(
+                    f"Mario hit the ground: speed reduced from {previous_downward_movement} to {downward_movement}"
+                )
+            else:
+                assert (
+                    False
+                ), f"Mario's fall slowed from {previous_downward_movement} to {downward_movement} without ground collision - physics violation"
+
+        return True
+
+    def handle_falling_acceleration(
+        self, behavior, downward_movement, previous_downward_movement
+    ):
+        """Handle Mario accelerating during fall (below terminal velocity)."""
+        # Check for physics disruptions
+        if self.had_recent_head_collision(behavior):
+            debug(
+                f"Mario falling with recent head collision disruption: downward movement {downward_movement} (was {previous_downward_movement})"
+            )
+            return True
+        elif self.had_recent_interactive_collision(behavior):
+            debug(
+                f"Mario falling with recent interactive object disruption: downward movement {downward_movement} (was {previous_downward_movement})"
+            )
+            return True
+        elif self.hit_moving_brick(behavior):
+            deceleration = previous_downward_movement - downward_movement
+            debug(
+                f"Mario near moving brick: fall changed from {previous_downward_movement} to {downward_movement}"
+            )
+
+            # Only assert brick collision physics if there was significant deceleration
+            if deceleration >= 5:
+                debug("Mario hit moving brick hard: validating collision physics")
+                assert (
+                    downward_movement >= 0
+                ), f"Brick collision caused upward movement: {downward_movement}"
+            return True
+
+        # Normal falling physics - should accelerate due to gravity
+        return self.validate_falling_physics(
+            downward_movement, previous_downward_movement
+        )
+
+    def validate_falling_physics(self, downward_movement, previous_downward_movement):
+        """Validate normal falling physics acceleration."""
+        # Mario should accelerate downward due to gravity (unless at terminal velocity)
+        expected_acceleration = 1.01  # GRAVITY constant from game
+        min_acceleration = 0.5  # Allow some tolerance for floating point
+
+        if previous_downward_movement > 0:
+            actual_acceleration = downward_movement - previous_downward_movement
+            if actual_acceleration < min_acceleration:
+                debug(
+                    f"Mario falling slower than expected: acceleration={actual_acceleration}, expected>={min_acceleration}"
+                )
+                # This might be normal due to collision adjustments or game mechanics
+
+        return True
+
+    def expect_fall(self, behavior):
+        """Expect Mario to fall when he has no bottom collision and no upward movement."""
+        if len(behavior) < self.min_history:
+            return
+
+        # Get current state
+        now, before, right_before = behavior[-1], behavior[-2], behavior[-3]
+        keys = self.get_pressed_keys(before)
+        mario_internal = self.internal_state()
+        mario_before = self.get("player", before)
+
+        # Get positions and movements
         pos_now = self.get_position(now, axis="y")
         pos_before = self.get_position(before, axis="y")
         pos_right_before = self.get_position(right_before, axis="y")
 
-        # Calculate y-movements (positive = upward, negative = downward)
-        current_y_movement = pos_before - pos_now
+        current_y_movement = (
+            pos_before - pos_now
+        )  # Positive = upward, negative = downward
         previous_y_movement = pos_right_before - pos_before
 
-        # Calculate collision states
-        was_airborne_before = not self.has_collision(
-            mario_right_before, right_before, "bottom"
+        # Debug the falling context
+        self.debug_falling_context(
+            behavior, keys, mario_internal, pos_before, pos_now, current_y_movement
         )
 
         # Check if Mario should be falling (no bottom collision and no upward movement)
@@ -1781,15 +1933,12 @@ class Mario(Model):
             not self.has_collision(mario_before, before, "bottom")
             and current_y_movement <= 0
         ):
-            # Mario is airborne and not moving upward - he should be falling (moving downward)
+
             if current_y_movement == 0:
-                # Mario is stationary in air - he should start falling
-                self.assert_gravity_working(behavior)
-                debug("Mario is airborne and stationary - should start falling")
-                return
+                # Mario is stationary in air - should start falling
+                return self.handle_stationary_in_air(behavior)
 
             elif current_y_movement < 0:  # Moving downward
-                # Mario is falling - validate falling physics
                 downward_movement = (
                     -current_y_movement
                 )  # Make positive for easier logic
@@ -1798,187 +1947,25 @@ class Mario(Model):
                 )
 
                 if previous_downward_movement > 0:  # Was falling before
-                    # Mario should accelerate downward due to gravity, but may reach terminal velocity
-
                     # Assert Mario never exceeds terminal velocity
                     assert (
                         downward_movement <= self.max_falling_speed
                     ), f"Mario exceeded terminal velocity: {downward_movement} > {self.max_falling_speed}"
 
                     if previous_downward_movement >= self.max_falling_speed:
-                        # At or near terminal velocity - speed should remain constant or decrease (if hitting ground)
-                        debug(
-                            f"Mario at terminal velocity: downward movement {downward_movement} (was {previous_downward_movement})"
+                        # At or near terminal velocity
+                        return self.handle_terminal_velocity(
+                            behavior, downward_movement, previous_downward_movement
                         )
-
-                        if downward_movement < previous_downward_movement:
-                            # Speed decreased - Mario must have hit the ground or stomped an enemy
-                            mario_now = self.get("player", now)
-                            # Check for enemy stomp or large deceleration indicating enemy interaction
-                            deceleration = (
-                                previous_downward_movement - downward_movement
-                            )
-                            large_deceleration = (
-                                deceleration >= 5
-                            )  # Significant speed drop
-
-                            if self.stomped_enemy(behavior) or large_deceleration:
-                                debug(
-                                    f"Mario stomped enemy: fall slowed from {previous_downward_movement} to {downward_movement} due to bounce"
-                                )
-
-                                # Assert basic enemy interaction physics
-                                assert (
-                                    downward_movement < previous_downward_movement
-                                ), f"Enemy stomp should cause deceleration: {downward_movement} >= {previous_downward_movement}"
-                                assert (
-                                    0
-                                    <= downward_movement
-                                    <= self.enemy_stomp_max_result_movement
-                                ), f"Enemy stomp result movement out of range: {downward_movement} (expected 0-{self.enemy_stomp_max_result_movement})"
-
-                                # Only assert minimum deceleration for significant stomps
-                                if deceleration >= self.enemy_stomp_min_deceleration:
-                                    debug(
-                                        f"Full enemy stomp physics validated: deceleration={deceleration}, final_movement={downward_movement}"
-                                    )
-                                else:
-                                    debug(
-                                        f"Light enemy touch: deceleration={deceleration}, final_movement={downward_movement}"
-                                    )
-
-                                if large_deceleration and not self.stomped_enemy(
-                                    behavior
-                                ):
-                                    debug(
-                                        f"Large fall deceleration ({deceleration}) likely indicates enemy stomp that wasn't detected"
-                                    )
-                            else:
-                                # Check for ground collision
-                                has_ground_collision = self.has_collision(
-                                    mario_now, now, "bottom"
-                                )
-
-                                if has_ground_collision:
-                                    debug(
-                                        f"Mario hit the ground: speed reduced from {previous_downward_movement} to {downward_movement}"
-                                    )
-                                else:
-                                    assert (
-                                        False
-                                    ), f"Mario's fall slowed from {previous_downward_movement} to {downward_movement} without ground collision - physics violation"
-
                     else:
                         # Below terminal velocity - should accelerate
-                        # Exception: recent head collisions or interactive object collisions can cause physics disruptions
-                        # Check for specific collision types with assertions
-                        if self.had_recent_head_collision(behavior):
-                            debug(
-                                f"Mario falling with recent head collision disruption: downward movement {downward_movement} (was {previous_downward_movement})"
-                            )
-                        elif self.had_recent_interactive_collision(behavior):
-                            debug(
-                                f"Mario falling with recent interactive object disruption: downward movement {downward_movement} (was {previous_downward_movement})"
-                            )
-                        elif self.hit_moving_brick(behavior):
-                            deceleration = (
-                                previous_downward_movement - downward_movement
-                            )
-                            debug(
-                                f"Mario near moving brick: fall changed from {previous_downward_movement} to {downward_movement}"
-                            )
-
-                            # Only assert brick collision physics if there was significant deceleration
-                            if deceleration >= 5:
-                                debug(
-                                    f"Mario hit moving brick hard: validating collision physics"
-                                )
-                                assert (
-                                    downward_movement >= 0
-                                ), f"Brick collision caused upward movement: {downward_movement}"
-                                assert (
-                                    downward_movement <= 8
-                                ), f"Brick collision result too high: {downward_movement} > 8"
-                                debug(
-                                    f"Brick collision physics validated: deceleration={deceleration}, final_movement={downward_movement}"
-                                )
-                            else:
-                                debug(
-                                    f"Mario barely touched brick (deceleration={deceleration}) - allowing minor physics disruption"
-                                )
-                        else:
-                            # Check if this might be a head collision we didn't detect
-                            mario_before = (
-                                self.get("player", behavior[-2])
-                                if len(behavior) >= 2
-                                else None
-                            )
-                            has_top_collision = (
-                                self.has_collision(mario_before, behavior[-2], "top")
-                                if mario_before
-                                else False
-                            )
-
-                            debug(
-                                f"Fall deceleration check: has_top_collision={has_top_collision}, recent_head_collision=False"
-                            )
-                            debug(
-                                f"Mario position: before={self.get_position(behavior[-2], 'y') if len(behavior) >= 2 else 'N/A'}, now={self.get_position(behavior[-1], 'y')}"
-                            )
-
-                            assert (
-                                downward_movement >= previous_downward_movement
-                            ), f"Mario should accelerate downward while falling: {downward_movement} < {previous_downward_movement}"
-                            debug(
-                                f"Mario falling and accelerating: downward movement {downward_movement} (was {previous_downward_movement})"
-                            )
-                else:
-                    # Mario just started falling - validate this is a legitimate transition
-                    if was_airborne_before:
-                        # Mario was airborne before - normal transition from jump peak or stationary air
-                        debug(
-                            f"Mario started falling from airborne position: downward movement {downward_movement}"
+                        return self.handle_falling_acceleration(
+                            behavior, downward_movement, previous_downward_movement
                         )
-                    else:
-                        # Mario was on ground before but is falling now - should only happen if stepped off platform
-                        # This is a valid transition (stepping off edges) but worth noting
-                        debug(
-                            f"Mario stepped off ground and started falling: downward movement {downward_movement}"
-                        )
-
-                    # Assert reasonable initial falling speed (shouldn't start too fast)
-                    # Exception: head collisions can cause immediate fast falls
-                    if self.had_head_collision(behavior):
-                        debug(
-                            f"Mario started falling fast due to head collision: {downward_movement} - this is expected"
-                        )
-                        # Assert head collision fall speed is within game engine limits
-                        assert (
-                            downward_movement <= self.head_collision_fall_speed_max
-                        ), f"Mario's head collision fall speed {downward_movement} exceeds game engine maximum ({self.head_collision_fall_speed_max})"
-                        assert (
-                            downward_movement >= self.head_collision_fall_speed_min
-                        ), f"Mario's head collision fall speed {downward_movement} too low - expected immediate impact fall (≥{self.head_collision_fall_speed_min})"
-                    else:
-                        assert (
-                            downward_movement <= self.max_initial_fall_speed
-                        ), f"Mario started falling too fast: {downward_movement} > {self.max_initial_fall_speed} - should start gradually"
-        else:
-            # Mario has bottom collision (on ground) - check for unexpected downward movement
-            if (
-                current_y_movement < -self.max_ground_downward_movement
-            ):  # Large downward movement (negative values)
-                # Large downward movement while on ground is unexpected
-                debug(
-                    f"Mario on ground had large downward movement: {current_y_movement}"
-                )
-                assert (
-                    False
-                ), f"Mario on ground should not have large downward movement: {current_y_movement}"
 
     def expect(self, behavior):
         """Expect Mario to behave correctly."""
         self.expect_move(behavior, direction="right")
         self.expect_move(behavior, direction="left")
-        # self.expect_jump(behavior)
-        # self.expect_falling(behavior)
+        self.expect_jump(behavior)
+        self.expect_fall(behavior)

@@ -106,7 +106,7 @@ class Physics:
                         )
                         new_vel = self.walk_accel  # Use normal acceleration
                         debug(
-                            f"Post-turnaround cal_vel(0, 6, {self.walk_accel}) = {new_vel}"
+                            f"Post-turnaround cal_vel(0, {self.max_walk_vel}, {self.walk_accel}) = {new_vel}"
                         )
                     else:
                         # Normal collision recovery in walking state - game might restore higher velocity
@@ -127,7 +127,7 @@ class Physics:
 
                     # Apply cal_vel logic: new_vel = current_vel + accel (positive for right)
                     new_vel = 0 + accel
-                    debug(f"Jump cal_vel(0, 6, {accel}) = {new_vel}")
+                    debug(f"Jump cal_vel(0, {self.max_walk_vel}, {accel}) = {new_vel}")
 
                     # No special collision adjustment needed here - handled by main collision logic
                 else:
@@ -148,14 +148,16 @@ class Physics:
 
                     # Apply cal_vel logic: new_vel = current_vel + accel (negative for left)
                     new_vel = 0 - accel
-                    debug(f"Jump cal_vel(0, 6, {accel}) = {new_vel}")
+                    debug(f"Jump cal_vel(0, {self.max_walk_vel}, {accel}) = {new_vel}")
 
                     # No special collision adjustment needed here - handled by main collision logic
                 else:
                     # Use exact cal_vel logic for normal walking
-                    # cal_vel(0, 6, 0.15, True) = -0.15
+                    # cal_vel(0, max_walk_vel, walk_accel, True) = -walk_accel
                     new_vel = 0 - self.walk_accel  # -0.15
-                    debug(f"Walk cal_vel(0, 6, 0.15, True) = {new_vel}")
+                    debug(
+                        f"Walk cal_vel(0, {self.max_walk_vel}, {self.walk_accel}, True) = {new_vel}"
+                    )
 
             debug(f"Calculated new velocity: {new_vel}, rounded: {round(new_vel)}")
             if round(new_vel) == 0:
@@ -191,75 +193,64 @@ class Collision:
     def __init__(self, game):
         self.game = game
 
-    def will_collide_with_enemy(self, before_state, predicted_x, predicted_y):
-        """Check if Mario will collide with enemy at predicted position."""
-        mario_elements = before_state.boxes.get("player", [])
-        if not mario_elements:
-            return None
-
-        mario = mario_elements[0]
-        if not hasattr(mario, "box"):
-            return None
-
-        temp_box = mario.box.copy()
-        temp_box.x = predicted_x
-        temp_box.y = predicted_y
-
-        # Check enemy collision using vision system (same as colliderect)
-        enemies = before_state.boxes.get("enemy", [])
-        for enemy in enemies:
-            if self.game.vision.collides(temp_box, enemy.box):
-                return enemy
-        return None
-
-    def enemy_collision_type(self, mario_internal, enemy):
-        """Determine if enemy collision is stomp or side collision."""
-        if mario_internal.get("y_vel", 0) > 0:  # Mario falling
-            return "stomp"
-        else:
-            return "side_collision"
-
-    def will_collide_with_objects(self, mario_state, predicted_x, predicted_y):
-        """Check if Mario will collide with solid objects at predicted position.
+    def will_collide_with(self, mario_state, predicted_x, predicted_y, object_types):
+        """Generic collision detection method.
 
         Args:
             mario_state: The game state containing Mario and objects
             predicted_x: Mario's predicted x position
             predicted_y: Mario's predicted y position
-            tolerance: Extra pixels to expand Mario's collision box (for near-miss detection)
+            object_types: List of object type names to check for collisions
+
+        Returns:
+            For single object type: The colliding object or None
+            For multiple object types: True if collision found, False otherwise
         """
         mario_elements = mario_state.boxes.get("player", [])
         if not mario_elements:
             debug("No Mario elements found in state")
-            return False
+            return None if len(object_types) == 1 else False
 
         mario = mario_elements[0]
         if not hasattr(mario, "box"):
             debug("Mario has no box attribute")
-            return False
+            return None if len(object_types) == 1 else False
 
         temp_box = mario.box.copy()
         temp_box.x = predicted_x
         temp_box.y = predicted_y
-
-        # Use exact collision detection like the game (no tolerance)
 
         debug(
             f"Checking collision at predicted position: x={predicted_x}, y={predicted_y}"
         )
         debug(f"Mario temp box: {temp_box}")
 
-        # Check collision with solid objects using vision system (same as colliderect)
-        solid_objects = ["box", "brick", "pipe", "ground", "step", "collider"]
-        for obj_type in solid_objects:
+        # Check collision with specified object types using vision system (same as colliderect)
+        for obj_type in object_types:
             objects = mario_state.boxes.get(obj_type, [])
             debug(f"Checking {len(objects)} {obj_type} objects")
             for i, obj in enumerate(objects):
                 debug(f"  {obj_type}[{i}] at {obj.box}")
                 if self.game.vision.collides(temp_box, obj.box):
                     debug(f"COLLISION DETECTED with {obj_type}[{i}] at {obj.box}")
-                    return True
-        return False
+                    # For single object type, return the object; for multiple, return True
+                    return obj if len(object_types) == 1 else True
+
+        return None if len(object_types) == 1 else False
+
+    def will_collide_with_objects(self, mario_state, predicted_x, predicted_y):
+        """Check if Mario will collide with solid objects at predicted position."""
+        solid_objects = ["box", "brick", "pipe", "ground", "step", "collider"]
+        return self.will_collide_with(
+            mario_state, predicted_x, predicted_y, solid_objects
+        )
+
+    def will_collide_with_enemy(self, mario_state, predicted_x, predicted_y):
+        """Check if Mario will collide with enemy at predicted position."""
+        enemy_objects = ["enemy"]
+        return self.will_collide_with(
+            mario_state, predicted_x, predicted_y, enemy_objects
+        )
 
 
 class Mario(Model):
@@ -278,27 +269,17 @@ class Mario(Model):
         self.turnaround_delay_frames = (
             7  # Frames needed for internal turnaround deceleration
         )
-        # Physics constants
-        self.max_falling_speed = 11
+        # Model validation constants
         self.falling_threshold = 6  # Max frames Mario can be stationary in air
         self.min_history = 3  # Minimum behavior history needed for complex checks
         self.jump_deceleration_threshold = (
             0.5  # Minimum deceleration when jump key released
         )
-        self.max_initial_fall_speed = 3  # Maximum speed when starting to fall
-        self.max_ground_downward_movement = (
-            2  # Maximum downward movement while on ground
-        )
         self.residual_movement_tolerance = 5  # Tolerance for residual movements from inertia, collision adjustment, or floating-point precision
         self.landing_impact_threshold = (
             4  # Downward speed that constitutes a "hard landing"
         )
-        self.head_collision_fall_speed_min = (
-            4  # Minimum fall speed after head collision
-        )
-        self.head_collision_fall_speed_max = (
-            10  # Maximum fall speed after head collision (includes momentum effects)
-        )
+        self.physics_tolerance = 0.5  # Tolerance for floating point and collision adjustments in physics validation
         # Enemy stomp constants
         self.enemy_stomp_min_deceleration = (
             3  # Minimum deceleration when stomping enemy
@@ -623,10 +604,14 @@ class Mario(Model):
                     return True
         return False
 
-    def stomped_enemy(self, behavior):
+    def detect_enemy_stomp(self, behavior):
         """
-        Check if Mario just stomped on an enemy, causing a bounce effect.
-        When Mario lands on enemies, his y_vel is set to -7 (upward bounce).
+        Detect if Mario just stomped on an enemy, causing fall deceleration.
+
+        This is a simple detection based on:
+        1. Mario was falling (moving downward)
+        2. Enemy collision detected at previous position
+        3. Sudden deceleration in fall speed
         """
         if len(behavior) < 2:
             return False
@@ -635,64 +620,26 @@ class Mario(Model):
         mario_before = self.get("player", before)
         mario_now = self.get("player", now)
 
-        # Check if Mario was falling and there's an enemy collision from above
-        pos_now = self.get_position(now, axis="y")
-        pos_before = self.get_position(before, axis="y")
+        # Check if Mario was falling (moving downward) based on position change
+        pos_before = mario_before.box.y
+        pos_now = mario_now.box.y
+        was_falling = pos_now > pos_before  # Mario moved downward
 
-        was_falling = pos_now > pos_before  # Mario was moving downward
+        if not was_falling:
+            return False
 
-        if was_falling:
-            # Check for enemy collision - Mario landing on top of enemy
-            # When Mario stomps Goomba, it's moved to dying_group immediately
-            # Check multiple frames and different enemy groups
-            all_enemies = []
-            for i in range(min(3, len(behavior))):
-                frame_idx = len(behavior) - 1 - i
-                if frame_idx >= 0:
-                    state = behavior[frame_idx]
-                    # Check regular enemies
-                    frame_enemies = state.boxes.get("enemy", [])
-                    all_enemies.extend(frame_enemies)
-                    # Check other enemy-related groups that might contain stomped enemies
-                    for group_name in ["goomba", "koopa", "shell"]:
-                        if group_name in state.boxes:
-                            all_enemies.extend(state.boxes[group_name])
+        # Check if there was an enemy at Mario's previous position
+        # (enemy might be removed/moved after stomp)
+        enemy = self.collision.will_collide_with_enemy(
+            before, mario_before.box.x, mario_before.box.y
+        )
 
+        if enemy:
             debug(
-                f"Checking enemy stomp: Mario fell {pos_now - pos_before} pixels, found {len(all_enemies)} total enemies"
+                f"Enemy stomp detected: Mario was falling (moved {pos_now - pos_before} pixels down) and collided with enemy at ({enemy.box.x}, {enemy.box.y})"
             )
-            debug(
-                f"Mario before: ({mario_before.box.x}, {mario_before.box.y}), size: {mario_before.box.width}x{mario_before.box.height}"
-            )
+            return True
 
-            # Check previous frames for enemies that might have been removed
-            for i in range(min(3, len(behavior))):
-                frame_idx = len(behavior) - 1 - i
-                if frame_idx >= 0:
-                    frame_enemies = behavior[frame_idx].boxes.get("enemy", [])
-                    debug(f"Frame -{i} enemies: {len(frame_enemies)}")
-
-            for enemy in all_enemies:
-                # Check if Mario was above the enemy and colliding
-                mario_bottom = mario_before.box.bottom
-                enemy_top = enemy.box.top
-                horizontal_overlap = (
-                    mario_before.box.left < enemy.box.right
-                    and mario_before.box.right > enemy.box.left
-                )
-                vertical_collision = (
-                    mario_bottom <= enemy_top + 8
-                )  # Increased tolerance
-
-                debug(
-                    f"Enemy at ({enemy.box.x}, {enemy.box.y}): Mario bottom {mario_bottom}, enemy top {enemy_top}, h_overlap {horizontal_overlap}, v_collision {vertical_collision}"
-                )
-
-                if vertical_collision and horizontal_overlap:
-                    debug(
-                        f"Mario stomped enemy: was falling {pos_now - pos_before} pixels"
-                    )
-                    return True
         return False
 
     def hit_moving_brick(self, behavior):
@@ -732,126 +679,6 @@ class Mario(Model):
                         )
                         return True
         return False
-
-    def touched_enemy_side(self, behavior):
-        """
-        Check if Mario touched an enemy from the side (causing death or shrinking).
-        Based on the game's actual collision logic from level.py:342-355
-        """
-        if len(behavior) < 2:
-            return False
-
-        now, before = behavior[-1], behavior[-2]
-        mario_now = self.get("player", now)
-        mario_before = self.get("player", before)
-
-        # Check if Mario is invincible or hurt-invincible (can't be hurt)
-        if hasattr(mario_now, "invincible") and mario_now.invincible:
-            debug("Mario is invincible - enemy collision won't hurt Mario")
-            return False
-        if hasattr(mario_now, "hurt_invincible") and mario_now.hurt_invincible:
-            debug("Mario is hurt-invincible - enemy collision ignored")
-            return False
-
-        # Check current frame for enemy collision (game checks every frame)
-        state = behavior[-1]
-
-        # Check all enemy-related groups (separate regular enemies from shells)
-        regular_enemies = []
-        shells = []
-
-        # Regular enemies: enemy, goomba, koopa groups
-        for group_name in ["enemy", "goomba", "koopa"]:
-            group_enemies = state.boxes.get(group_name, [])
-            regular_enemies.extend(group_enemies)
-
-        # Shells are handled differently
-        shell_enemies = state.boxes.get("shell", [])
-        shells.extend(shell_enemies)
-
-        debug(
-            f"Checking {len(regular_enemies)} regular enemies and {len(shells)} shells for collision"
-        )
-
-        # Check regular enemy collisions first
-        for enemy in regular_enemies:
-            mario_box = mario_now.box
-            enemy_box = enemy.box
-
-            # Use tighter collision detection (like pygame sprite collision)
-            collision_tolerance = 1  # Much tighter than before
-            horizontal_overlap = (
-                mario_box.left < enemy_box.right + collision_tolerance
-                and mario_box.right > enemy_box.left - collision_tolerance
-            )
-            vertical_overlap = (
-                mario_box.top < enemy_box.bottom + collision_tolerance
-                and mario_box.bottom > enemy_box.top - collision_tolerance
-            )
-
-            debug(
-                f"Enemy at ({enemy_box.x}, {enemy_box.y}): h_overlap={horizontal_overlap}, v_overlap={vertical_overlap}"
-            )
-
-            if horizontal_overlap and vertical_overlap:
-                # Check if this is a stomp (Mario falling from above) vs side collision
-                # Game logic: if Mario has positive y_vel (falling), it's a stomp
-                mario_falling = hasattr(mario_now, "y_vel") and mario_now.y_vel > 0
-                mario_above_enemy = (
-                    mario_box.bottom <= enemy_box.top + 2
-                )  # Tight tolerance
-
-                debug(
-                    f"Collision detected: Mario falling = {mario_falling}, Mario above enemy = {mario_above_enemy}"
-                )
-
-                if mario_falling and mario_above_enemy:
-                    debug("This is a stomp, not a side collision")
-                    continue  # This is a stomp, not harmful to Mario
-                else:
-                    debug("Side collision detected with regular enemy")
-                    return True  # Side collision - Mario gets hurt
-
-        # Check shell collisions (different logic)
-        for shell in shells:
-            mario_box = mario_now.box
-            shell_box = shell.box
-
-            collision_tolerance = 1
-            horizontal_overlap = (
-                mario_box.left < shell_box.right + collision_tolerance
-                and mario_box.right > shell_box.left - collision_tolerance
-            )
-            vertical_overlap = (
-                mario_box.top < shell_box.bottom + collision_tolerance
-                and mario_box.bottom > shell_box.top - collision_tolerance
-            )
-
-            if horizontal_overlap and vertical_overlap:
-                # Check if shell is sliding (dangerous) or stationary
-                shell_sliding = hasattr(shell, "state") and shell.state == "shell_slide"
-
-                if shell_sliding:
-                    debug("Collision with sliding shell - Mario gets hurt")
-                    return True  # Sliding shell hurts Mario
-                else:
-                    # Stationary shell - check if it's a stomp or kick
-                    mario_falling = hasattr(mario_now, "y_vel") and mario_now.y_vel > 0
-                    mario_above_shell = mario_box.bottom <= shell_box.top + 2
-
-                    if mario_falling and mario_above_shell:
-                        debug("Stomping stationary shell - activates it")
-                        continue  # Stomping shell activates it, doesn't hurt Mario
-                    else:
-                        debug("Kicking stationary shell - doesn't hurt Mario")
-                        continue  # Kicking shell doesn't hurt Mario
-
-        return False  # No harmful collision detected
-
-    def reset_death_flag(self):
-        """Reset the death flag when Mario respawns or level restarts."""
-        self.mario_is_dead = False
-        debug("Mario death flag reset")
 
     def assert_gravity_working(self, behavior):
         """
@@ -1389,7 +1216,7 @@ class Mario(Model):
         mario_internal = context["mario_internal"]
         keys = context["keys"]
         if mario_internal.get("x_vel", 0) == 0 and keys.get(direction):
-            hypothetical_velocity = 6
+            hypothetical_velocity = self.max_speed
             hypothetical_pos = current_pos + (
                 hypothetical_velocity
                 if direction == "right"
@@ -1818,7 +1645,7 @@ class Mario(Model):
         deceleration = previous_downward_movement - downward_movement
         large_deceleration = deceleration >= 5
 
-        if self.stomped_enemy(behavior) or large_deceleration:
+        if self.detect_enemy_stomp(behavior) or large_deceleration:
             debug(
                 f"Mario stomped enemy: fall slowed from {previous_downward_movement} to {downward_movement} due to bounce"
             )
@@ -1887,10 +1714,8 @@ class Mario(Model):
     def validate_fall_physics(self, downward_movement, previous_downward_movement):
         """Validate normal fall physics acceleration."""
         # Mario should accelerate downward due to gravity (unless at terminal velocity)
-        expected_acceleration = 1.01  # GRAVITY constant from game
-        tolerance = (
-            0.5  # Allow some tolerance for floating point and collision adjustments
-        )
+        expected_acceleration = self.physics.gravity  # GRAVITY constant from game
+        tolerance = self.physics_tolerance
 
         if previous_downward_movement > 0:
             actual_acceleration = downward_movement - previous_downward_movement
@@ -1964,11 +1789,11 @@ class Mario(Model):
 
         # Assert Mario never exceeds terminal velocity
         assert (
-            downward_movement <= self.max_falling_speed
-        ), f"Mario exceeded terminal velocity: {downward_movement} > {self.max_falling_speed}"
+            downward_movement <= self.physics.max_y_vel
+        ), f"Mario exceeded terminal velocity: {downward_movement} > {self.physics.max_y_vel}"
 
         # Handle terminal velocity vs acceleration scenarios
-        if previous_downward_movement >= self.max_falling_speed:
+        if previous_downward_movement >= self.physics.max_y_vel:
             # At or near terminal velocity
             return self.handle_terminal_velocity(
                 behavior, downward_movement, previous_downward_movement

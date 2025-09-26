@@ -3,7 +3,15 @@ class Model:
 
     def __init__(self, game):
         self.game = game
-        self.solid_objects = ["box", "collider"]
+        self.solid_objects = [
+            "box",
+            "brick",
+            "pipe",
+            "ground",
+            "step",
+            "slider",
+            "collider",
+        ]
 
     def get(self, name, state):
         """Find element in the specified state."""
@@ -14,6 +22,16 @@ class Model:
     def is_key_pressed(self, state, key):
         """Return True if the given key is pressed in the state."""
         return state.keys.key_code(key) in state.keys
+
+    def get_pressed_keys(self, state):
+        """Extract pressed keys from behavior state."""
+        return {
+            "right": self.is_key_pressed(state, "right"),
+            "left": self.is_key_pressed(state, "left"),
+            "jump": self.is_key_pressed(state, "a"),
+            "action": self.is_key_pressed(state, "s"),
+            "down": self.is_key_pressed(state, "down"),
+        }
 
     def has_collision(self, element, state, direction, objects=None):
         """

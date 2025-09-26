@@ -1777,10 +1777,10 @@ class Mario(Model):
         # Handle no jump movement validation
         self.handle_no_jump_movement(behavior)
 
-    def debug_falling_context(
+    def debug_fall_context(
         self, behavior, keys, mario_internal, pos_before, pos_now, current_y_movement
     ):
-        """Log comprehensive falling context for debugging."""
+        """Log comprehensive fall context for debugging."""
         debug(f"Mario internal state: {mario_internal}")
         debug(
             f"Y movement: {pos_before} -> {pos_now} ({current_y_movement:+.1f} pixels)"
@@ -1852,7 +1852,7 @@ class Mario(Model):
 
         return True
 
-    def handle_falling_acceleration(
+    def handle_fall_acceleration(
         self, behavior, downward_movement, previous_downward_movement
     ):
         """Handle Mario accelerating during fall (below terminal velocity)."""
@@ -1882,23 +1882,37 @@ class Mario(Model):
             return True
 
         # Normal falling physics - should accelerate due to gravity
-        return self.validate_falling_physics(
-            downward_movement, previous_downward_movement
-        )
+        return self.validate_fall_physics(downward_movement, previous_downward_movement)
 
-    def validate_falling_physics(self, downward_movement, previous_downward_movement):
-        """Validate normal falling physics acceleration."""
+    def validate_fall_physics(self, downward_movement, previous_downward_movement):
+        """Validate normal fall physics acceleration."""
         # Mario should accelerate downward due to gravity (unless at terminal velocity)
         expected_acceleration = 1.01  # GRAVITY constant from game
-        min_acceleration = 0.5  # Allow some tolerance for floating point
+        tolerance = (
+            0.5  # Allow some tolerance for floating point and collision adjustments
+        )
 
         if previous_downward_movement > 0:
             actual_acceleration = downward_movement - previous_downward_movement
-            if actual_acceleration < min_acceleration:
+
+            # Check if acceleration is within expected range
+            min_expected = expected_acceleration - tolerance
+            max_expected = expected_acceleration + tolerance
+
+            if actual_acceleration < min_expected:
                 debug(
-                    f"Mario falling slower than expected: acceleration={actual_acceleration}, expected>={min_acceleration}"
+                    f"Mario falling slower than expected: acceleration={actual_acceleration:.2f}, expected={expected_acceleration:.2f}±{tolerance}"
                 )
                 # This might be normal due to collision adjustments or game mechanics
+            elif actual_acceleration > max_expected:
+                debug(
+                    f"Mario falling faster than expected: acceleration={actual_acceleration:.2f}, expected={expected_acceleration:.2f}±{tolerance}"
+                )
+                # This could indicate physics issues, but allow for now
+            else:
+                debug(
+                    f"Mario falling acceleration within expected range: {actual_acceleration:.2f} (expected={expected_acceleration:.2f}±{tolerance})"
+                )
 
         return True
 
@@ -1923,45 +1937,47 @@ class Mario(Model):
         )  # Positive = upward, negative = downward
         previous_y_movement = pos_right_before - pos_before
 
-        # Debug the falling context
-        self.debug_falling_context(
+        # Debug the fall context
+        self.debug_fall_context(
             behavior, keys, mario_internal, pos_before, pos_now, current_y_movement
         )
 
-        # Check if Mario should be falling (no bottom collision and no upward movement)
-        if (
-            not self.has_collision(mario_before, before, "bottom")
-            and current_y_movement <= 0
-        ):
+        # Early return if Mario is not falling
+        if self.has_collision(mario_before, before, "bottom") or current_y_movement > 0:
+            return  # Mario is on ground or moving upward
 
-            if current_y_movement == 0:
-                # Mario is stationary in air - should start falling
-                return self.handle_stationary_in_air(behavior)
+        # Mario is airborne and not moving upward - handle falling scenarios
+        if current_y_movement == 0:
+            # Mario is stationary in air - should start falling
+            return self.handle_stationary_in_air(behavior)
 
-            elif current_y_movement < 0:  # Moving downward
-                downward_movement = (
-                    -current_y_movement
-                )  # Make positive for easier logic
-                previous_downward_movement = (
-                    -previous_y_movement if previous_y_movement < 0 else 0
-                )
+        # Mario is moving downward - validate falling physics
+        downward_movement = -current_y_movement  # Make positive for easier logic
+        previous_downward_movement = (
+            -previous_y_movement if previous_y_movement < 0 else 0
+        )
 
-                if previous_downward_movement > 0:  # Was falling before
-                    # Assert Mario never exceeds terminal velocity
-                    assert (
-                        downward_movement <= self.max_falling_speed
-                    ), f"Mario exceeded terminal velocity: {downward_movement} > {self.max_falling_speed}"
+        # Handle initial fall (just started falling)
+        if previous_downward_movement == 0:
+            debug(f"Mario started falling: downward movement {downward_movement}")
+            return
 
-                    if previous_downward_movement >= self.max_falling_speed:
-                        # At or near terminal velocity
-                        return self.handle_terminal_velocity(
-                            behavior, downward_movement, previous_downward_movement
-                        )
-                    else:
-                        # Below terminal velocity - should accelerate
-                        return self.handle_falling_acceleration(
-                            behavior, downward_movement, previous_downward_movement
-                        )
+        # Assert Mario never exceeds terminal velocity
+        assert (
+            downward_movement <= self.max_falling_speed
+        ), f"Mario exceeded terminal velocity: {downward_movement} > {self.max_falling_speed}"
+
+        # Handle terminal velocity vs acceleration scenarios
+        if previous_downward_movement >= self.max_falling_speed:
+            # At or near terminal velocity
+            return self.handle_terminal_velocity(
+                behavior, downward_movement, previous_downward_movement
+            )
+        else:
+            # Below terminal velocity - should accelerate
+            return self.handle_fall_acceleration(
+                behavior, downward_movement, previous_downward_movement
+            )
 
     def expect(self, behavior):
         """Expect Mario to behave correctly."""

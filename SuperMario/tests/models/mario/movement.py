@@ -101,6 +101,9 @@ class Propositions:
     def stayed_still_too_long(self, stayed_still):
         return stayed_still > 20
 
+    def exceeds_max_velocity(self, velocity):
+        return velocity > 12
+
 
 class CausalProperties(Propositions):
     """Causal properties for Mario's movement."""
@@ -172,8 +175,8 @@ class CausalProperties(Propositions):
             )
 
 
-class TemporalProperties(Propositions):
-    """Temporal properties for Mario's movement."""
+class LivenessProperties(Propositions):
+    """Liveness properties for Mario's movement."""
 
     def check_starts_moving(self, behavior, window=30):
         """Check if Mario eventually starts moving when keys are consistently pressed."""
@@ -221,6 +224,31 @@ class TemporalProperties(Propositions):
         )
 
 
+class SafetyProperties(Propositions):
+    """Safety properties for Mario's movement."""
+
+    def check_does_not_move_past_left_boundary(self, behavior):
+        """Check if Mario does not move past the boundary."""
+        self.model.assert_with_success(
+            not self.model.level.is_past_left_boundary(behavior.mario_now),
+            f"Mario is within left boundary x={behavior.mario_now.box.x}, boundary={self.model.level.start_x}",
+        )
+
+    def check_does_not_move_past_right_boundary(self, behavior):
+        """Check if Mario does not move past the boundary."""
+        self.model.assert_with_success(
+            not self.model.level.is_past_right_boundary(behavior.mario_now),
+            f"Mario is within right boundary x={behavior.mario_now.box.x}, boundary={self.model.level.end_x - behavior.mario_now.box.w}",
+        )
+
+    def check_does_not_exceed_max_speed(self, behavior):
+        """Check if Mario does not exceed the maximum speed."""
+        self.model.assert_with_success(
+            not self.exceeds_max_velocity(behavior.velocity_now),
+            f"Mario's velocity {behavior.velocity_now} is less than the maximum",
+        )
+
+
 class Behavior:
     """Encapsulates Mario's movement behavior extracted from behavior frames."""
 
@@ -249,6 +277,7 @@ class Behavior:
         self.pos_now = model.get_position(self.now)
 
         self.velocity = self.pos_before - self.pos_right_before
+        self.velocity_now = self.pos_now - self.pos_before
         self.actual_movement = self.pos_now - self.pos_before
 
         # Extract key states
@@ -264,7 +293,8 @@ class Movement(Model):
         super().__init__(game)
         self.level = level
         self.causal = CausalProperties(self)
-        self.temporal = TemporalProperties(self)
+        self.liveness = LivenessProperties(self)
+        self.safety = SafetyProperties(self)
 
     def expect(self, behavior):
         """Expect Mario to move correctly."""
@@ -280,5 +310,9 @@ class Movement(Model):
         self.causal.check_left_movement(behavior)
         self.causal.check_stayed_in_place(behavior)
 
-        # Validate what Mario should have done
-        self.temporal.check_starts_moving(behavior)
+        # Validate what Mario should eventually do
+        self.liveness.check_starts_moving(behavior)
+
+        # Validate what Mario should never do
+        self.safety.check_does_not_move_past_left_boundary(behavior)
+        self.safety.check_does_not_move_past_right_boundary(behavior)

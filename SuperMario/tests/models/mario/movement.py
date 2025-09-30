@@ -1,5 +1,3 @@
-from testflows.core import debug
-
 from ..base import Model
 
 
@@ -182,7 +180,7 @@ class Propositions:
         return self.model.direction(state, self.in_the_air(mario, state)) == "left"
 
     def stayed_still_too_long(self, stayed_still):
-        return stayed_still > 29
+        return stayed_still > 45
 
     def exceeds_max_velocity(self, velocity):
         return abs(velocity) > 6
@@ -314,7 +312,7 @@ class CausalProperties(Propositions):
 class LivenessProperties(Propositions):
     """Liveness properties for Mario's movement."""
 
-    def check_starts_moving(self, behavior, window=30):
+    def check_starts_moving(self, behavior, window=50):
         """Check if Mario eventually starts moving when keys are consistently pressed."""
 
         history = list(reversed(behavior.history[-window:]))

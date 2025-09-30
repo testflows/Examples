@@ -126,6 +126,76 @@ class Model:
                 return True
         return False
 
+    def has_bottom_touch(self, element, state, objects=None):
+        """Check if element has collision on the bottom side."""
+        if objects is None:
+            objects = self.solid_objects
+
+        # Create a test box slightly below the element
+        test_box = element.box.copy()
+        test_box.y += 1  # Move 1 pixel down
+
+        # Gather all boxes from state.boxes based on the provided keys
+        boxes = []
+        for name in objects:
+            boxes += state.boxes.get(name, [])
+
+        # Check each box for a collision using the simple collides method
+        for box in boxes:
+            if box is element:
+                continue
+            if self.game.vision.collides(test_box, box.box):
+                return True
+        return False
+
+    def has_top_touch(self, element, state, objects=None):
+        """Check if element has collision on the top side."""
+        if objects is None:
+            objects = self.solid_objects
+
+        # Create a test box slightly above the element
+        test_box = element.box.copy()
+        test_box.y -= 1  # Move 1 pixel up
+
+        # Gather all boxes from state.boxes based on the provided keys
+        boxes = []
+        for name in objects:
+            boxes += state.boxes.get(name, [])
+
+        # Check each box for a collision using the simple collides method
+        for box in boxes:
+            if box is element:
+                continue
+            if self.game.vision.collides(test_box, box.box):
+                return True
+        return False
+
+    def direction(self, state, in_the_air):
+        """Return the direction Mario based on the keys pressed."""
+
+        keys = self.get_pressed_keys(state)
+        right_pressed = keys.get("right", False)
+        left_pressed = keys.get("left", False)
+
+        if in_the_air:
+            # Air physics: right has precedence (jumping/falling state)
+            if right_pressed:
+                direction = "right"
+            elif left_pressed:
+                direction = "left"
+            else:
+                return  # No keys pressed
+        else:
+            # Ground physics: left has precedence (walking state)
+            if left_pressed:
+                direction = "left"
+            elif right_pressed:
+                direction = "right"
+            else:
+                return  # No keys pressed
+
+        return direction
+
     def assert_with_success(self, condition, msg):
         """Assert a condition and print success message if it passes."""
         if condition:

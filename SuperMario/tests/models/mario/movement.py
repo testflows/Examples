@@ -48,6 +48,14 @@ class Propositions:
     def at_right_boundary(self, mario_now):
         return self.model.level.is_at_right_boundary(mario_now)
 
+    def on_the_ground(self, mario_now, now):
+        """Check if Mario is on the ground (has bottom collision)."""
+        return self.model.has_bottom_touch(mario_now, now)
+
+    def in_the_air(self, mario_now, now):
+        """Check if Mario is in the air (no bottom collision)."""
+        return not self.on_the_ground(mario_now, now)
+
     def has_right_movement_cause(self, velocity, right_pressed):
         return velocity > 0 or right_pressed
 
@@ -66,15 +74,36 @@ class Propositions:
     def moved_left(self, actual_movement):
         return actual_movement < 0
 
+    def moved(self, actual_movement):
+        return actual_movement != 0
+
     def stayed_in_place(self, actual_movement):
         return actual_movement == 0
+
+    def path_is_clear(self, mario_now, now, mario_before, before, direction):
+        """Check if Mario's path is clear for movement in the given direction."""
+
+        if direction == "right":
+            return not self.right_touching(
+                mario_now, now, mario_before, before
+            ) and not self.model.level.is_at_right_boundary(mario_now)
+        else:  # left
+            return not self.left_touching(
+                mario_now, now, mario_before, before
+            ) and not self.model.level.is_at_left_boundary(mario_now)
+
+    def has_right_direction(self, mario, state):
+        return self.model.direction(state, self.in_the_air(mario, state)) == "right"
+
+    def has_left_direction(self, mario, state):
+        return self.model.direction(state, self.in_the_air(mario, state)) == "left"
+
+    def stayed_still_too_long(self, stayed_still):
+        return stayed_still > 20
 
 
 class CausalProperties(Propositions):
     """Causal properties for Mario's movement."""
-
-    def __init__(self, model):
-        self.model = model
 
     def check_right_movement(self, behavior):
         """Check if Mario's right movement had a valid cause."""
@@ -143,6 +172,55 @@ class CausalProperties(Propositions):
             )
 
 
+class TemporalProperties(Propositions):
+    """Temporal properties for Mario's movement."""
+
+    def check_starts_moving(self, behavior, window=30):
+        """Check if Mario eventually starts moving when keys are consistently pressed."""
+
+        history = reversed(behavior.history[-window:])
+        stayed_still = 0
+
+        # set current direction
+        direction = self.model.direction(
+            behavior.now, self.in_the_air(behavior.mario_now, behavior.now)
+        )
+
+        if direction is None:
+            # no keys pressed
+            return
+
+        for now, before in zip(history, history):
+            pos_before = self.model.get_position(before)
+            pos_now = self.model.get_position(now)
+            actual_movement = pos_now - pos_before
+
+            mario_now = self.model.get("player", now)
+            mario_before = self.model.get("player", before)
+
+            # Mario started moving
+            if self.moved(actual_movement):
+                break
+
+            # check if direction was changed
+            if self.model.direction(now, self.in_the_air(mario_now, now)) != direction:
+                break
+
+            # check if path was blocked
+            if not self.path_is_clear(mario_now, now, mario_before, before, direction):
+                break
+
+            stayed_still += 1
+
+        if stayed_still < 1:
+            return
+
+        self.model.assert_with_success(
+            not self.stayed_still_too_long(stayed_still),
+            f"Mario started moving after {stayed_still} frames",
+        )
+
+
 class Behavior:
     """Encapsulates Mario's movement behavior extracted from behavior frames."""
 
@@ -178,27 +256,6 @@ class Behavior:
         self.right_pressed = keys.get("right", False)
         self.left_pressed = keys.get("left", False)
 
-    def debug(self):
-        """Debug Mario's movement state."""
-        debug(f"Mario: {self.pos_right_before} -> {self.pos_before} -> {self.pos_now}")
-        debug(f"Velocity: {self.velocity}, Movement: {self.actual_movement}")
-        debug(f"Keys: right={self.right_pressed}, left={self.left_pressed}")
-        debug(
-            f"Collision: before={self.model.has_collision(self.mario_before, self.before)}, now={self.model.has_collision(self.mario_now, self.now)}"
-        )
-        debug(
-            f"Right touch: before={self.model.has_right_touch(self.mario_before, self.before)}, now={self.model.has_right_touch(self.mario_now, self.now)}"
-        )
-        debug(
-            f"Left touch: before={self.model.has_left_touch(self.mario_before, self.before)}, now={self.model.has_left_touch(self.mario_now, self.now)}"
-        )
-        debug(
-            f"Left boundary: before={self.model.level.is_at_left_boundary(self.mario_before)}, now={self.model.level.is_at_left_boundary(self.mario_now)}"
-        )
-        debug(
-            f"Right boundary: before={self.model.level.is_at_right_boundary(self.mario_before)}, now={self.model.level.is_at_right_boundary(self.mario_now)}"
-        )
-
 
 class Movement(Model):
     """Mario movement model."""
@@ -207,6 +264,7 @@ class Movement(Model):
         super().__init__(game)
         self.level = level
         self.causal = CausalProperties(self)
+        self.temporal = TemporalProperties(self)
 
     def expect(self, behavior):
         """Expect Mario to move correctly."""
@@ -216,9 +274,11 @@ class Movement(Model):
 
         # Create movement behavior analysis
         behavior = Behavior(self, behavior)
-        behavior.debug()
 
         # Validate what Mario actually did
         self.causal.check_right_movement(behavior)
         self.causal.check_left_movement(behavior)
         self.causal.check_stayed_in_place(behavior)
+
+        # Validate what Mario should have done
+        self.temporal.check_starts_moving(behavior)

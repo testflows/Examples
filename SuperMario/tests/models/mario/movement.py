@@ -51,6 +51,12 @@ class Propositions:
     def __init__(self, model):
         self.model = model
 
+        # constants
+        self.max_tiny_velocity = 2
+        self.max_stayed_still = 45
+        self.max_velocity = 6
+        self.max_vertical_velocity = 11
+
     def right_pressed(self, keys):
         return keys.get("right", False)
 
@@ -63,13 +69,11 @@ class Propositions:
     def no_keys(self, right_pressed, left_pressed):
         return not right_pressed and not left_pressed
 
-    def tiny_velocity(self, velocity, threshold=2):
-        return abs(velocity) < threshold
+    def tiny_velocity(self, velocity):
+        return abs(velocity) < self.max_tiny_velocity
 
-    def both_keys_tiny_velocity(
-        self, velocity, right_pressed, left_pressed, threshold=3
-    ):
-        return left_pressed and right_pressed and abs(velocity) < threshold
+    def both_keys_tiny_velocity(self, velocity, right_pressed, left_pressed):
+        return left_pressed and right_pressed and abs(velocity) < self.max_tiny_velocity
 
     def left_touch(self, mario_now, now):
         return self.model.has_left_touch(mario_now, now)
@@ -180,13 +184,13 @@ class Propositions:
         return self.model.direction(state, self.in_the_air(mario, state)) == "left"
 
     def stayed_still_too_long(self, stayed_still):
-        return stayed_still > 45
+        return stayed_still > self.max_stayed_still
 
     def exceeds_max_velocity(self, velocity):
-        return abs(velocity) > 6
+        return abs(velocity) > self.max_velocity
 
     def exceeds_max_vertical_velocity(self, velocity):
-        return abs(velocity) > 11
+        return abs(velocity) > self.max_vertical_velocity
 
 
 class CausalProperties(Propositions):
@@ -312,10 +316,10 @@ class CausalProperties(Propositions):
 class LivenessProperties(Propositions):
     """Liveness properties for Mario's movement."""
 
-    def check_starts_moving(self, behavior, window=50):
+    def check_starts_moving(self, behavior):
         """Check if Mario eventually starts moving when keys are consistently pressed."""
 
-        history = list(reversed(behavior.history[-window:]))
+        history = list(reversed(behavior.history[-(self.max_stayed_still + 2) :]))
         stayed_still = 0
 
         # set current direction

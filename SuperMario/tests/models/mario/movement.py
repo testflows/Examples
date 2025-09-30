@@ -182,7 +182,7 @@ class Propositions:
         return self.model.direction(state, self.in_the_air(mario, state)) == "left"
 
     def stayed_still_too_long(self, stayed_still):
-        return stayed_still > 20
+        return stayed_still > 29
 
     def exceeds_max_velocity(self, velocity):
         return abs(velocity) > 6

@@ -22,7 +22,7 @@ class Model:
             "enemy",
             "goomba",
             "koopa",
-            "fly koopa",
+            "flykoopa",
         ]
 
     def get(self, name, state):

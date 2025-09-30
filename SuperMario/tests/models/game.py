@@ -1,6 +1,8 @@
+"""Game behavior model."""
+
 from .base import Model
-from .mario import Mario
 from .level import Level
+from .mario import Mario
 
 
 class Game(Model):
@@ -13,4 +15,5 @@ class Game(Model):
 
     def expect(self, behavior):
         """Expect the game to behave correctly."""
+
         self.mario.expect(behavior)

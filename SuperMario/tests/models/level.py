@@ -1,3 +1,5 @@
+"""Level behavior model."""
+
 from testflows.core import debug
 
 from .base import Model

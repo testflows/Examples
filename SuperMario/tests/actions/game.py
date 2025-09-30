@@ -23,6 +23,34 @@ keys = {
 all_key_codes = [code for name, code in vars(pg).items() if name.startswith("K_")]
 
 
+class Player:
+    """Encapsulates player state data for easy access."""
+
+    def __init__(self, player):
+        # Extract attributes from player object
+        attributes = [
+            "x_vel",
+            "y_vel",
+            "state",
+            "big",
+            "dead",
+            "invincible",
+            "hurt_invincible",
+            "walking_timer",
+            "current_time",
+            "frame_index",
+        ]
+
+        for attr in attributes:
+            setattr(self, attr, getattr(player, attr, None))
+
+    def __str__(self):
+        return f"Player(x_vel={self.x_vel}, y_vel={self.y_vel}, state='{self.state}', big={self.big}, dead={self.dead})"
+
+    def __repr__(self):
+        return str(self)
+
+
 class Keys:
     def __init__(self):
         self.keys = {}
@@ -52,14 +80,19 @@ class Keys:
 
 
 class BehaviorState:
-    def __init__(self, keys, boxes, viewport, frame):
+    def __init__(self, keys, boxes, viewport, frame, state):
         self.keys = deepcopy(keys)
         self.boxes = boxes
         self.viewport = deepcopy(viewport)
         self.frame = frame
+        self.player = None
+
+        # Extract player state
+        if hasattr(state, "player"):
+            self.player = Player(state.player)
 
     def __str__(self):
-        return f"BehaviorState(keys={self.keys}, boxes={self.boxes}, viewport={self.viewport}, frame=...)"
+        return f"BehaviorState(keys={self.keys}, boxes={self.boxes}, viewport={self.viewport}, player={self.player}, frame=...)"
 
     def __repr__(self):
         return str(self)
@@ -107,12 +140,14 @@ class Control(tools.Control):
                 self.event_loop()
                 self.update()
                 self.vision.detect()
+
                 self.behavior.append(
                     BehaviorState(
-                        self.keys,
-                        self.vision.boxes,
-                        self.vision.viewport,
-                        pg.surfarray.array3d(self.screen),
+                        keys=self.keys,
+                        boxes=self.vision.boxes,
+                        viewport=self.vision.viewport,
+                        frame=pg.surfarray.array3d(self.screen),
+                        state=self.state,
                     )
                 )
                 yield self

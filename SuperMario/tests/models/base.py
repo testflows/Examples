@@ -1,3 +1,8 @@
+"""Base model class."""
+
+from testflows.core import debug
+
+
 class Model:
     """Base model class."""
 
@@ -33,52 +38,97 @@ class Model:
             "down": self.is_key_pressed(state, "down"),
         }
 
-    def has_collision(self, element, state, direction, objects=None):
+    def has_collision(self, element, state, objects=None):
         """
-        Check if the element has a collision with another object in a given direction.
+        Check if the element has a collision with another object.
 
         Args:
-            game: The game context (used for overlay drawing).
             element: The element to check collisions for.
             state: The game state, which contains state.boxes (a dictionary mapping keys to lists of box objects).
-            direction (str): One of "left", "right", "top", or "bottom".
             objects (iterable, optional): Specific keys from state.boxes to check. If None, all objects are used.
 
         Returns:
-            bool: True if the element collides in the specified direction, False otherwise.
+            bool: True if the element collides with any object, False otherwise.
         """
         if objects is None:
             objects = self.solid_objects
 
-        # Mapping from direction to the corresponding collision detection function.
-        collision_funcs = {
-            "left": self.game.vision.left_touch,
-            "right": self.game.vision.right_touch,
-            "top": self.game.vision.top_touch,
-            "bottom": self.game.vision.bottom_touch,
-        }
-
-        if direction not in collision_funcs:
-            raise ValueError(
-                "Invalid direction. Must be one of 'left', 'right', 'top', or 'bottom'."
-            )
-
-        collision_func = collision_funcs[direction]
-
-        # Gather all boxes from state.boxes based on the provided keys (or all keys if none provided)
+        # Gather all boxes from state.boxes based on the provided keys
         boxes = []
-        if objects is None:
-            objects = state.boxes.keys()
         for name in objects:
             boxes += state.boxes.get(name, [])
 
-        # Check each box for a collision.
+        # Check each box for a collision using the simple collides method
         for box in boxes:
             if box is element:
                 continue
 
-            if collision_func(element.box, box.box):
+            if self.game.vision.collides(element.box, box.box):
                 self.game.vision.overlay(boxes=[element.box, box.box])
                 return True
 
         return False
+
+    def get_position(self, state, axis="x"):
+        """Return Mario's coordinate from the given state."""
+        mario = self.get("player", state)
+        if mario is None:
+            return None
+        if axis == "x":
+            return mario.box.x
+        return mario.box.y
+
+    def get_positions(self, *states, axis="x"):
+        """Return Mario's positions from multiple states."""
+        return tuple(self.get_position(state, axis) for state in states)
+
+    def has_right_touch(self, element, state, objects=None):
+        """Check if element has collision on the right side."""
+        if objects is None:
+            objects = self.solid_objects
+
+        # Create a test box slightly to the right of the element
+        test_box = element.box.copy()
+        test_box.x += 1  # Move 1 pixel to the right
+
+        # Gather all boxes from state.boxes based on the provided keys
+        boxes = []
+        for name in objects:
+            boxes += state.boxes.get(name, [])
+
+        # Check each box for a collision using the simple collides method
+        for box in boxes:
+            if box is element:
+                continue
+            if self.game.vision.collides(test_box, box.box):
+                return True
+        return False
+
+    def has_left_touch(self, element, state, objects=None):
+        """Check if element has collision on the left side."""
+        if objects is None:
+            objects = self.solid_objects
+
+        # Create a test box slightly to the left of the element
+        test_box = element.box.copy()
+        test_box.x -= 1  # Move 1 pixel to the left
+
+        # Gather all boxes from state.boxes based on the provided keys
+        boxes = []
+        for name in objects:
+            boxes += state.boxes.get(name, [])
+
+        # Check each box for a collision using the simple collides method
+        for box in boxes:
+            if box is element:
+                continue
+            if self.game.vision.collides(test_box, box.box):
+                return True
+        return False
+
+    def assert_with_success(self, condition, msg):
+        """Assert a condition and print success message if it passes."""
+        if condition:
+            debug(f"✓ Mario {msg}")
+        else:
+            assert False, f"Mario failed to: {msg}"

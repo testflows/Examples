@@ -178,7 +178,6 @@ class Vision:
         """
         # Use pygame's actual collision detection instead of custom logic
         # This ensures 100% consistency with the game's collision behavior
-        import pygame as pg
 
         if not isinstance(box1, pg.Rect):
             box1 = pg.Rect(box1.x, box1.y, box1.width, box1.height)

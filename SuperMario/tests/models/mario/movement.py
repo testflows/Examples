@@ -54,8 +54,10 @@ class Propositions:
         # constants
         self.max_tiny_velocity = 2
         self.max_stayed_still = 45
-        self.max_velocity = 6
+        self.max_walk_velocity = 6
+        self.max_run_velocity = 12
         self.max_vertical_velocity = 11
+        self.max_recently_run = 45
 
     def right_pressed(self, keys):
         return keys.get("right", False)
@@ -65,6 +67,25 @@ class Propositions:
 
     def jump_pressed(self, keys):
         return keys.get("jump", False)
+
+    def action_pressed(self, keys):
+        return keys.get("action", False)
+
+    def direction_pressed(self, keys):
+        return self.left_pressed(keys) or self.right_pressed(keys)
+
+    def running_pressed(self, keys):
+        return self.action_pressed(keys) and self.direction_pressed(keys)
+
+    def running_pressed_recently(self, behavior):
+        """Return True if action+direction were pressed in the recent history window."""
+
+        # Iterate from most recent to older within the window for early exit
+        for state in reversed(behavior.history[-self.max_recently_run :]):
+            keys = self.model.get_pressed_keys(state)
+            if self.running_pressed(keys):
+                return True
+        return False
 
     def no_keys(self, right_pressed, left_pressed):
         return not right_pressed and not left_pressed
@@ -186,8 +207,11 @@ class Propositions:
     def stayed_still_too_long(self, stayed_still):
         return stayed_still > self.max_stayed_still
 
-    def exceeds_max_velocity(self, velocity):
-        return abs(velocity) > self.max_velocity
+    def exceeds_max_walk_velocity(self, velocity):
+        return abs(velocity) > self.max_walk_velocity
+
+    def exceeds_max_run_velocity(self, velocity):
+        return abs(velocity) > self.max_run_velocity
 
     def exceeds_max_vertical_velocity(self, velocity):
         return abs(velocity) > self.max_vertical_velocity
@@ -384,10 +408,17 @@ class SafetyProperties(Propositions):
     def check_does_not_exceed_max_velocity(self, behavior):
         """Check if Mario does not exceed the maximum speed."""
 
-        self.model.assert_with_success(
-            not self.exceeds_max_velocity(behavior.velocity_now),
-            f"Mario's velocity {behavior.velocity_now} is less than the maximum",
-        )
+        if self.running_pressed_recently(behavior):
+            self.model.assert_with_success(
+                not self.exceeds_max_run_velocity(behavior.velocity_now),
+                f"Mario's velocity {behavior.velocity_now} is within run maximum",
+            )
+
+        else:
+            self.model.assert_with_success(
+                not self.exceeds_max_walk_velocity(behavior.velocity_now),
+                f"Mario's velocity {behavior.velocity_now} is within walk maximum",
+            )
 
     def check_does_not_exceed_max_vertical_velocity(self, behavior):
         """Check if Mario does not exceed the maximum vertical velocity."""

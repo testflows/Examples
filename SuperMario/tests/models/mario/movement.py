@@ -317,7 +317,7 @@ class LivenessProperties(Propositions):
     def check_starts_moving(self, behavior, window=30):
         """Check if Mario eventually starts moving when keys are consistently pressed."""
 
-        history = reversed(behavior.history[-window:])
+        history = list(reversed(behavior.history[-window:]))
         stayed_still = 0
 
         # set current direction
@@ -329,7 +329,7 @@ class LivenessProperties(Propositions):
             # no keys pressed
             return
 
-        for now, before in zip(history, history):
+        for now, before in zip(history[:-1], history[1:]):
             pos_before = self.model.get_position(before)
             pos_now = self.model.get_position(now)
             actual_movement = pos_now - pos_before

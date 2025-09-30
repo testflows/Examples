@@ -18,6 +18,13 @@ class Model:
             "collider",
         ]
 
+        self.stompable_enemy_objects = [
+            "enemy",
+            "goomba",
+            "koopa",
+            "fly koopa",
+        ]
+
     def get(self, name, state):
         """Find element in the specified state."""
         elements = state.boxes.get(name, [])

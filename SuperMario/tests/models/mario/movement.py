@@ -44,10 +44,7 @@ class Behavior:
         self.actual_vertical_movement = self.pos_y_now - self.pos_y_before
 
         # Extract key states
-        keys = model.get_pressed_keys(self.now)
-        self.right_pressed = keys.get("right", False)
-        self.left_pressed = keys.get("left", False)
-        self.jump_pressed = keys.get("jump", False)
+        self.keys = model.get_pressed_keys(self.now)
 
 
 class Propositions:
@@ -55,6 +52,15 @@ class Propositions:
 
     def __init__(self, model):
         self.model = model
+
+    def right_pressed(self, keys):
+        return keys.get("right", False)
+
+    def left_pressed(self, keys):
+        return keys.get("left", False)
+
+    def jump_pressed(self, keys):
+        return keys.get("jump", False)
 
     def no_keys(self, right_pressed, left_pressed):
         return not right_pressed and not left_pressed
@@ -94,6 +100,12 @@ class Propositions:
 
     def at_right_boundary(self, mario_now):
         return self.model.level.is_at_right_boundary(mario_now)
+
+    def past_left_boundary(self, mario_now):
+        return self.model.level.is_past_left_boundary(mario_now)
+
+    def past_right_boundary(self, mario_now):
+        return self.model.level.is_past_right_boundary(mario_now)
 
     def on_the_ground(self, mario_now, now):
         """Check if Mario is on the ground (has bottom collision)."""
@@ -157,11 +169,11 @@ class Propositions:
         if direction == "right":
             return not self.right_touching(
                 mario_now, now, mario_before, before
-            ) and not self.model.level.is_at_right_boundary(mario_now)
+            ) and not self.at_right_boundary(mario_now)
         else:  # left
             return not self.left_touching(
                 mario_now, now, mario_before, before
-            ) and not self.model.level.is_at_left_boundary(mario_now)
+            ) and not self.at_left_boundary(mario_now)
 
     def has_right_direction(self, mario, state):
         return self.model.direction(state, self.in_the_air(mario, state)) == "right"
@@ -184,9 +196,10 @@ class CausalProperties(Propositions):
 
     def check_right_movement(self, behavior):
         """Check if Mario's right movement had a valid cause."""
+
         actual_movement = behavior.actual_movement
         velocity = behavior.velocity
-        right_pressed = behavior.right_pressed
+        right_pressed = self.right_pressed(behavior.keys)
 
         if self.moved_right(actual_movement):
             self.model.assert_with_success(
@@ -196,9 +209,10 @@ class CausalProperties(Propositions):
 
     def check_left_movement(self, behavior):
         """Check if Mario's left movement had a valid cause."""
+
         actual_movement = behavior.actual_movement
         velocity = behavior.velocity
-        left_pressed = behavior.left_pressed
+        left_pressed = self.left_pressed(behavior.keys)
 
         if self.moved_left(actual_movement):
             self.model.assert_with_success(
@@ -208,11 +222,12 @@ class CausalProperties(Propositions):
 
     def check_stayed_in_place(self, behavior):
         """Check if Mario staying in place had a valid cause."""
+
         actual_movement = behavior.actual_movement
         velocity = behavior.velocity
 
-        right_pressed = behavior.right_pressed
-        left_pressed = behavior.left_pressed
+        right_pressed = self.right_pressed(behavior.keys)
+        left_pressed = self.left_pressed(behavior.keys)
 
         mario_now = behavior.mario_now
         mario_before = behavior.mario_before
@@ -250,6 +265,7 @@ class CausalProperties(Propositions):
 
     def check_fall(self, behavior):
         """Check if Mario's fall (downward movement) has a valid cause."""
+
         actual_vertical_movement = behavior.actual_vertical_movement
 
         if self.moved_down(actual_vertical_movement):
@@ -262,6 +278,7 @@ class CausalProperties(Propositions):
 
     def check_stop_fall(self, behavior):
         """Check if stopped falling has a valid cause (landing)."""
+
         was_falling = self.velocity_down(behavior.vertical_velocity)
         now_vertical_movement = behavior.actual_vertical_movement
 
@@ -278,11 +295,12 @@ class CausalProperties(Propositions):
 
     def check_jump(self, behavior):
         """Check if Mario's upward movement (jump) has a valid cause."""
+
         actual_vertical_movement = behavior.actual_vertical_movement
         vertical_velocity = behavior.vertical_velocity
 
         if self.moved_up(actual_vertical_movement):
-            jump_pressed = behavior.jump_pressed
+            jump_pressed = self.jump_pressed(behavior.keys)
             mario_before = behavior.mario_before
             before = behavior.before
             self.model.assert_with_success(
@@ -347,20 +365,23 @@ class SafetyProperties(Propositions):
 
     def check_does_not_move_past_left_boundary(self, behavior):
         """Check if Mario does not move past the boundary."""
+
         self.model.assert_with_success(
-            not self.model.level.is_past_left_boundary(behavior.mario_now),
+            not self.past_left_boundary(behavior.mario_now),
             f"Mario is within left boundary x={behavior.mario_now.box.x}, boundary={self.model.level.start_x}",
         )
 
     def check_does_not_move_past_right_boundary(self, behavior):
         """Check if Mario does not move past the boundary."""
+
         self.model.assert_with_success(
-            not self.model.level.is_past_right_boundary(behavior.mario_now),
+            not self.past_right_boundary(behavior.mario_now),
             f"Mario is within right boundary x={behavior.mario_now.box.x}, boundary={self.model.level.end_x - behavior.mario_now.box.w}",
         )
 
     def check_does_not_exceed_max_velocity(self, behavior):
         """Check if Mario does not exceed the maximum speed."""
+
         self.model.assert_with_success(
             not self.exceeds_max_velocity(behavior.velocity_now),
             f"Mario's velocity {behavior.velocity_now} is less than the maximum",
@@ -368,6 +389,7 @@ class SafetyProperties(Propositions):
 
     def check_does_not_exceed_max_vertical_velocity(self, behavior):
         """Check if Mario does not exceed the maximum vertical velocity."""
+
         self.model.assert_with_success(
             not self.exceeds_max_vertical_velocity(behavior.vertical_velocity_now),
             f"Mario's vertical velocity {behavior.vertical_velocity_now} is less than the maximum",

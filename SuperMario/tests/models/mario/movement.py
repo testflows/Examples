@@ -382,7 +382,7 @@ class LivenessProperties(Propositions):
 
         self.model.assert_with_success(
             not self.stayed_still_too_long(stayed_still),
-            f"Mario started moving after {stayed_still} frames",
+            f"Mario stayed still for {stayed_still} frames",
         )
 
 

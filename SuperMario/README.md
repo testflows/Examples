@@ -7,6 +7,12 @@ This is a [TestFlows](https://testflows.com) example that demonstrates automated
 * Original game code: https://github.com/marblexu/PythonSuperMario
 * Based on: https://github.com/justinmeister/Mario-Level-1
 
+## 📚 References
+
+* [Testing Super Mario Using a Behavior Model (Part 1)](https://testflows.com/blog/testing-super-mario-using-a-behavior-model-part1/).  Covers the game’s architecture and the setup of a comprehensive testing framework.
+
+* [Testing Super Mario Using a Behavior Model (Part 2)](https://testflows.com/blog/testing-super-mario-using-a-behavior-model-part2/). Delves into the theory behind behavior models and its application in testing.
+
 ## 📋 Prerequisites
 
 ```bash
@@ -30,3 +36,4 @@ python3 main.py
 ```bash
 python3 tests/run.py
 ```
+

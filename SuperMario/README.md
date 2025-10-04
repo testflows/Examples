@@ -9,9 +9,11 @@ This is a [TestFlows](https://testflows.com) example that demonstrates automated
 
 ## 📚 References
 
-* [Testing Super Mario Using a Behavior Model (Part 1)](https://testflows.com/blog/testing-super-mario-using-a-behavior-model-part1/).  Covers the game’s architecture and the setup of a comprehensive testing framework.
+* [Testing Super Mario Using a Behavior Model (Part 1)](https://testflows.com/blog/testing-super-mario-using-a-behavior-model-part1/).
+  Covers the game’s architecture and the setup of a comprehensive testing framework.
 
-* [Testing Super Mario Using a Behavior Model (Part 2)](https://testflows.com/blog/testing-super-mario-using-a-behavior-model-part2/). Delves into the theory behind behavior models and its application in testing.
+* [Testing Super Mario Using a Behavior Model (Part 2)](https://testflows.com/blog/testing-super-mario-using-a-behavior-model-part2/).
+  Delves into the theory behind behavior models and its application in testing.
 
 ## 📋 Prerequisites
 

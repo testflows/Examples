@@ -44,6 +44,9 @@ class Player:
         for attr in attributes:
             setattr(self, attr, getattr(player, attr, None))
 
+        self.x_pos = player.rect.x
+        self.y_pos = player.rect.y
+
     def __str__(self):
         return f"Player(x_vel={self.x_vel}, y_vel={self.y_vel}, state='{self.state}', big={self.big}, dead={self.dead})"
 
@@ -167,6 +170,38 @@ def simulate_keypress(key):
     pg.event.post(keyup_event)
 
 
+def is_key_pressed(game, key):
+    """Return True if the given key is pressed in the state."""
+    return game.keys.key_code(key) in game.keys
+
+
+def get_pressed_keys(game):
+    """Extract pressed keys from behavior state."""
+
+    return {
+        "right": is_key_pressed(game, "right"),
+        "left": is_key_pressed(game, "left"),
+        "jump": is_key_pressed(game, "a"),
+        "action": is_key_pressed(game, "s"),
+        "down": is_key_pressed(game, "down"),
+        "enter": is_key_pressed(game, "enter"),
+    }
+
+
+def press_keys(game, press, pressed_keys=None):
+    """Press keys for a given number of frames."""
+    if pressed_keys is None:
+        pressed_keys = get_pressed_keys(game)
+
+    for key_name, pressed in press.items():
+        if pressed and not pressed_keys[key_name]:
+            keydown_event = pg.event.Event(pg.KEYDOWN, key=keys[key_name])
+            pg.event.post(keydown_event)
+        elif not pressed and pressed_keys[key_name]:
+            keyup_event = pg.event.Event(pg.KEYUP, key=keys[key_name])
+            pg.event.post(keyup_event)
+
+
 def press_enter():
     """Press the enter key."""
     return simulate_keypress(key=keys["enter"])
@@ -250,7 +285,7 @@ def wait_ready(self, game, seconds=3):
 
 
 @TestStep(Given)
-def start(self, ready=True):
+def start(self, ready=True, quit=True):
     """Start the game and wait for it to be ready."""
 
     game = Control()
@@ -271,7 +306,8 @@ def start(self, ready=True):
         yield game
     finally:
         with By("quitting game"):
-            pg.quit()
+            if quit:
+                pg.quit()
 
 
 @TestStep(Given)

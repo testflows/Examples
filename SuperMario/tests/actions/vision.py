@@ -211,3 +211,13 @@ class Vision:
         if self.boxes:
             self.viewport = self.game.state.viewport
         return self
+
+    def screenshot(self):
+        """
+        Take a screenshot of the current game screen and return it as a PNG image.
+
+        Returns:
+            pygame.Surface: The screenshot as a pygame Surface object.
+        """
+        # Return the screenshot
+        return self.game.screen.copy()

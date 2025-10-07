@@ -20,12 +20,18 @@ def argparser(parser):
         default=30,
         help="duration for manual play in seconds (default: 30)",
     )
+    parser.add_argument(
+        "--autonomous-play-seconds",
+        type=int,
+        default=30,
+        help="duration for autonomous play in seconds (default: 30)",
+    )
 
 
 @TestModule
 @Name("super mario")
 @ArgumentParser(argparser)
-def module(self, save_video=False, manual_play_seconds=30):
+def module(self, save_video=False, manual_play_seconds=30, autonomous_play_seconds=30):
     """Run tests for the Super Mario Bros. game."""
 
     self.context.save_video = save_video
@@ -54,6 +60,11 @@ def module(self, save_video=False, manual_play_seconds=30):
     with Feature("manual"):
         Scenario("play", test=load("tests.manual_play", "scenario"))(
             play_seconds=manual_play_seconds
+        )
+
+    with Feature("autonomous"):
+        Scenario("play", test=load("tests.autonomous_play", "scenario"))(
+            play_seconds=autonomous_play_seconds
         )
 
 

@@ -1,11 +1,19 @@
 # 🍄 Testing Super Mario Bros. Using a Behavior Model 
 
-This is a [TestFlows](https://testflows.com) example that demonstrates automated testing of a Super Mario Bros. game. The project includes a playable Super Mario Bros. game built with Pygame and automated tests that use a behavior models to test the game.
+This is a [TestFlows](https://testflows.com) example that demonstrates automated testing of a Super Mario Bros. game. The project includes a playable Super Mario Bros. game built with Pygame and automated tests that use a behavior model to test the game.
 
 ## 👨‍💻 Credits
 
 * Original game code: https://github.com/marblexu/PythonSuperMario
 * Based on: https://github.com/justinmeister/Mario-Level-1
+
+## 📚 References
+
+* [Testing Super Mario Using a Behavior Model (Part 1)](https://testflows.com/blog/testing-super-mario-using-a-behavior-model-part1/).
+  Covers the game’s architecture and the setup of a comprehensive testing framework.
+
+* [Testing Super Mario Using a Behavior Model (Part 2)](https://testflows.com/blog/testing-super-mario-using-a-behavior-model-part2/).
+  Delves into the theory behind behavior models and its application in testing.
 
 ## 📋 Prerequisites
 
@@ -30,3 +38,4 @@ python3 main.py
 ```bash
 python3 tests/run.py
 ```
+

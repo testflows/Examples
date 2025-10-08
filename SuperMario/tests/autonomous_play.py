@@ -1,88 +1,90 @@
 import random
+
 from testflows.core import *
+
 import actions.game as actions
-
-
-def generate_input(starting_keys, flip_probability, length):
-    input = []
-    next_keys = starting_keys
-
-    for _ in range(length):
-        for key_name, pressed in next_keys.items():
-            if random.random() < flip_probability:
-                next_keys[key_name] = not pressed
-        input.append(next_keys)
-        next_keys = next_keys.copy()
-    return input
+import actions.moves as moves
+import actions.paths as paths
 
 
 @TestScenario
-def play(self, input_sequence, play_seconds=1):
+def play(self, path, play_seconds=1, flip_probability=0.10):
     """Allow autonomous play of the game for a specified duration
     with behavior model validation."""
 
     with Given("start the game"):
         game = actions.start(quit=False)
-        self.context.game = game
 
-    starting_keys = {
-        "right": False,
-        "left": False,
-        "down": False,
-        "jump": False,
-        "action": False,
-        "enter": False,
-    }
-
-    input_sequence += generate_input(
-        starting_keys, flip_probability=0.10, length=play_seconds * game.fps
+    starting_keys = actions.PressedKeys(
+        right=0,
+        left=0,
+        down=0,
+        jump=0,
+        action=0,
+        enter=0,
     )
 
-    for input in input_sequence:
+    path += moves.random_move(
+        starting_keys, flip_probability=flip_probability, length=play_seconds * game.fps
+    )
+
+    for input in path:
         actions.press_keys(game, input)
         actions.play(game, frames=1)
 
-    self.context.paths.append((input_sequence, game.behavior))
-
-
-def score_paths(path):
-    """Score the path based on the player's position."""
-    _, behavior = path
-    now = behavior[-1]
-
-    if now.player is None:
-        return 0
-
-    return now.player.x_pos
+    self.context.paths.add(
+        paths.GamePath(
+            path,
+            paths.GamePath.score_path(game.behavior),
+            paths.GamePath.hash_path(path),
+        )
+    )
 
 
 @TestScenario
-def scenario(self, play_seconds, interval=1, tries=5):
+def scenario(
+    self,
+    play_seconds,
+    interval=1,
+    tries=5,
+    save_paths=True,
+    load_paths=True,
+    paths_file="paths.json",
+):
     """Allow autonomous play of the game for a specified duration
-    with behavior model validation."""
+    with behavior model validation.
 
-    self.context.paths = []
+    Args:
+        play_seconds: Total duration to play
+        interval: Interval for each iteration
+        tries: Number of tries per interval
+        save_paths: If True, save all discovered paths to file
+        load_paths: If True, load existing paths from file as starting pool
+        paths_file: Path to JSON file for storing/loading paths
+    """
 
-    input_sequence = []
+    self.context.paths = paths.GamePaths(paths=[])
+    path = []
+
+    if load_paths:
+        with Given("load paths from file"):
+            paths.load(filename=paths_file)
+            path = self.context.paths.select()
 
     for part in range(play_seconds // interval):
         for i in range(tries):
-            with Scenario(f"{part}:try {i}"):
-                play(input_sequence=input_sequence, play_seconds=interval)
+            with Scenario(f"Part {part}:try {i}"):
+                play(
+                    path=path,
+                    play_seconds=interval,
+                    flip_probability=random.choice([0.1]),
+                )
 
         # Sort paths by score (best first)
-        paths = self.context.paths
-        paths.sort(key=score_paths, reverse=True)
-        scores = [score_paths(path) for path in paths]
+        self.context.paths.sort()
+        path = self.context.paths.select()
 
-        # Display all scores
-        note(f"All scores: {scores}")
-        note(f"Best score: {scores[0]}")
-
-        # Pick path using probability distribution - higher scores more likely
-        min_score = min(scores)
-        weights = [s - min_score + 1 for s in scores]  # +1 to avoid zero weights
-        selected_idx = random.choices(range(len(paths)), weights=weights, k=1)[0]
-
-        input_sequence = paths[selected_idx][0]
-        note(f"Selected path score: {scores[selected_idx]}")
+        # Save all paths to file if requested
+        if save_paths:
+            with Then("save paths to file"):
+                paths.save(filename=paths_file)

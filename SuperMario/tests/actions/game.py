@@ -1,3 +1,4 @@
+import msgspec
 import pygame as pg
 
 from copy import deepcopy
@@ -6,6 +7,7 @@ from source import tools
 from source import constants as c
 from source.states import main_menu, load_screen, level
 from PIL import Image
+
 
 from testflows.core import *
 from .vision import Vision
@@ -21,6 +23,21 @@ keys = {
 }
 
 all_key_codes = [code for name, code in vars(pg).items() if name.startswith("K_")]
+
+
+class PressedKeys(msgspec.Struct):
+    right: int
+    left: int
+    jump: int
+    action: int
+    down: int
+    enter: int
+
+    def __hash__(self):
+        """Make PressedKeys hashable by returning hash of tuple of field values."""
+        return hash(
+            (self.right, self.left, self.jump, self.action, self.down, self.enter)
+        )
 
 
 class Player:
@@ -178,28 +195,28 @@ def is_key_pressed(game, key):
 def get_pressed_keys(game):
     """Extract pressed keys from behavior state."""
 
-    return {
-        "right": is_key_pressed(game, "right"),
-        "left": is_key_pressed(game, "left"),
-        "jump": is_key_pressed(game, "a"),
-        "action": is_key_pressed(game, "s"),
-        "down": is_key_pressed(game, "down"),
-        "enter": is_key_pressed(game, "enter"),
-    }
+    return PressedKeys(
+        right=is_key_pressed(game, "right"),
+        left=is_key_pressed(game, "left"),
+        jump=is_key_pressed(game, "a"),
+        action=is_key_pressed(game, "s"),
+        down=is_key_pressed(game, "down"),
+        enter=is_key_pressed(game, "enter"),
+    )
 
 
-def press_keys(game, press, pressed_keys=None):
-    """Press keys for a given number of frames."""
+def press_keys(game, press: PressedKeys, pressed_keys: PressedKeys = None):
+    """Press keys for a given number of frames using msgspec.Struct."""
     if pressed_keys is None:
         pressed_keys = get_pressed_keys(game)
 
-    for key_name, pressed in press.items():
-        if pressed and not pressed_keys[key_name]:
-            keydown_event = pg.event.Event(pg.KEYDOWN, key=keys[key_name])
-            pg.event.post(keydown_event)
-        elif not pressed and pressed_keys[key_name]:
-            keyup_event = pg.event.Event(pg.KEYUP, key=keys[key_name])
-            pg.event.post(keyup_event)
+    for key_name in press.__struct_fields__:
+        pressed = getattr(press, key_name)
+        current = getattr(pressed_keys, key_name)
+        if pressed and not current:
+            pg.event.post(pg.event.Event(pg.KEYDOWN, key=keys[key_name]))
+        elif not pressed and current:
+            pg.event.post(pg.event.Event(pg.KEYUP, key=keys[key_name]))
 
 
 def press_enter():
@@ -305,8 +322,8 @@ def start(self, ready=True, quit=True):
             wait_ready(game=game)
         yield game
     finally:
-        with By("quitting game"):
-            if quit:
+        if quit:
+            with By("quitting game"):
                 pg.quit()
 
 

@@ -15,14 +15,17 @@ def play(self, path, play_seconds=1, flip_probability=0.10):
     with Given("start the game"):
         game = actions.start(quit=False)
 
-    starting_keys = actions.PressedKeys(
-        right=0,
-        left=0,
-        down=0,
-        jump=0,
-        action=0,
-        enter=0,
-    )
+    if not path:
+        starting_keys = actions.PressedKeys(
+            right=0,
+            left=0,
+            down=0,
+            jump=0,
+            action=0,
+            enter=0,
+        )
+    else:
+        starting_keys = path[-1]
 
     path += moves.random_move(
         starting_keys, flip_probability=flip_probability, length=play_seconds * game.fps

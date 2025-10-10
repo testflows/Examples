@@ -2,6 +2,7 @@ import random
 
 from testflows.core import *
 
+import models.game as models
 import actions.game as actions
 import actions.moves as moves
 import actions.paths as paths
@@ -36,12 +37,19 @@ def select_weighted_move():
 
 
 @TestScenario
-def play(self, path, play_seconds=1, model=None):
+def play(self, path, play_seconds=1, with_model=False):
     """Allow autonomous play of the game for a specified duration
     with behavior model validation."""
 
     with Given("start the game"):
-        game = actions.start(quit=False, fps=60 * 5)
+        self.context.game = actions.start(quit=False, fps=60 * 5)
+
+    game = self.context.game
+
+    if with_model:
+        self.context.model = models.Game(game)
+
+    model = self.context.model
 
     length = play_seconds * game.fps
     new_path = []
@@ -81,6 +89,7 @@ def scenario(
     save_paths=True,
     load_paths=True,
     paths_file="paths.json",
+    with_model=False,
 ):
     """Allow autonomous play of the game for a specified duration
     with behavior model validation.
@@ -93,7 +102,6 @@ def scenario(
         load_paths: If True, load existing paths from file as starting pool
         paths_file: Path to JSON file for storing/loading paths
     """
-    self.context.model = None  # Turn off model for now
     self.context.paths = paths.GamePaths(paths=[paths.GamePath()])
 
     if load_paths:
@@ -105,7 +113,7 @@ def scenario(
     for part in range(play_seconds // interval):
         for i in range(tries):
             with Scenario(f"interval {part}:try {i}"):
-                play(path=path, play_seconds=interval, model=self.context.model)
+                play(path=path, play_seconds=interval, with_model=with_model)
 
             if path not in self.context.paths.paths:
                 # If the path is no longer in the paths list

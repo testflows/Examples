@@ -65,7 +65,7 @@ python3 tests/run.py
   python3 tests/run.py --autonomous --load-paths [--save-paths] [--paths-file custom_paths.json]
   ```
 
-### ⚙️ Advance Options
+### ⚙️ Advanced Options
 * Save video during play:
   ```bash
   python3 tests/run.py --save-video

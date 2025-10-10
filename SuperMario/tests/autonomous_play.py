@@ -7,49 +7,77 @@ import actions.moves as moves
 import actions.paths as paths
 
 
+def select_weighted_move():
+    """Select a move with weighted probabilities:
+    - fuzzy gets 40% weight (for exploration)
+    - right moves get 2x weight over left moves
+    - other moves get normal weight
+    """
+    move_weights = []
+    move_functions = []
+
+    for move in moves.all_moves:
+        weight = 1.0
+        move_name = move.__name__
+
+        # Give fuzzy much higher weight for exploration
+        if move_name == "fuzzy":
+            weight = 5.0
+        # Prefer right moves over left moves
+        elif "right" in move_name:
+            weight = 5.0
+        elif "left" in move_name:
+            weight = 0.5
+
+        move_weights.append(weight)
+        move_functions.append(move)
+
+    return random.choices(move_functions, weights=move_weights, k=1)[0]
+
+
 @TestScenario
-def play(self, path, play_seconds=1, flip_probability=0.10):
+def play(self, path, play_seconds=1, model=None):
     """Allow autonomous play of the game for a specified duration
     with behavior model validation."""
 
     with Given("start the game"):
-        game = actions.start(quit=False)
+        game = actions.start(quit=False, fps=60 * 5)
 
-    if not path:
-        starting_keys = actions.PressedKeys(
-            right=0,
-            left=0,
-            down=0,
-            jump=0,
-            action=0,
-            enter=0,
-        )
-    else:
-        starting_keys = path[-1]
+    length = play_seconds * game.fps
+    new_path = []
+    game_path = paths.GamePath()
 
-    path += moves.random_move(
-        starting_keys, flip_probability=flip_probability, length=play_seconds * game.fps
-    )
+    while len(new_path) < length:
+        move = select_weighted_move()
+        if move.__name__ == "fuzzy":
+            new_path += move(length=length - len(new_path))
+        else:
+            new_path += move()
 
-    for input in path:
+    for input in path.input_sequence:
         actions.press_keys(game, input)
-        actions.play(game, frames=1)
+        actions.play(game, frames=1, model=model)
+        game_path.append(input, game.behavior[-1])
+        if game_path.deaths[-1]:
+            self.context.paths.delete(path)
+            return
 
-    self.context.paths.add(
-        paths.GamePath(
-            path,
-            paths.GamePath.score_path(game.behavior),
-            paths.GamePath.hash_path(path),
-        )
-    )
+    for input in new_path[:length]:
+        actions.press_keys(game, input)
+        actions.play(game, frames=1, model=model)
+        game_path.append(input, game.behavior[-1])
+        if game_path.deaths[-1]:
+            break
+
+    self.context.paths.add(game_path)
 
 
 @TestScenario
 def scenario(
     self,
     play_seconds,
-    interval=1,
-    tries=5,
+    interval=30,
+    tries=3,
     save_paths=True,
     load_paths=True,
     paths_file="paths.json",
@@ -65,26 +93,26 @@ def scenario(
         load_paths: If True, load existing paths from file as starting pool
         paths_file: Path to JSON file for storing/loading paths
     """
-
-    self.context.paths = paths.GamePaths(paths=[])
-    path = []
+    self.context.model = None  # Turn off model for now
+    self.context.paths = paths.GamePaths(paths=[paths.GamePath()])
 
     if load_paths:
         with Given("load paths from file"):
             paths.load(filename=paths_file)
-            path = self.context.paths.select()
+
+    path = self.context.paths.select()
 
     for part in range(play_seconds // interval):
         for i in range(tries):
-            with Scenario(f"Part {part}:try {i}"):
-                play(
-                    path=path,
-                    play_seconds=interval,
-                    flip_probability=random.choice([0.1]),
-                )
+            with Scenario(f"interval {part}:try {i}"):
+                play(path=path, play_seconds=interval, model=self.context.model)
 
-        # Sort paths by score (best first)
-        self.context.paths.sort()
+            if path not in self.context.paths.paths:
+                # If the path is no longer in the paths list
+                # so we stop playing it
+                break
+
+        # Select the next path
         path = self.context.paths.select()
 
         # Save all paths to file if requested

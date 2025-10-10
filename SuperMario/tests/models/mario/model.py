@@ -12,10 +12,9 @@ from .movement import Movement
 class Mario(Model):
     """Mario's behavior model using modular architecture."""
 
-    def __init__(self, game, level):
+    def __init__(self, game):
         super().__init__(game)
-        self.level = level
-        self.movement = Movement(game=game, level=level)
+        self.movement = Movement(game=game)
 
     def expect(self, behavior):
         """Expect Mario to behave correctly."""

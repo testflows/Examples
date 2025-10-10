@@ -89,25 +89,45 @@ class Model:
         """Return Mario's positions from multiple states."""
         return tuple(self.get_position(state, axis) for state in states)
 
+    def is_at_left_boundary(self, element, state):
+        """Check if element is at the left boundary."""
+        return element.box.x == state.start_x
+
+    def is_at_right_boundary(self, element, state):
+        """Check if element is at the right boundary."""
+        return element.box.x == state.end_x - element.box.w
+
+    def is_past_left_boundary(self, element, state):
+        """Check if element is past the left boundary (indicates a bug)."""
+        return element.box.x < state.start_x
+
+    def is_past_right_boundary(self, element, state):
+        """Check if element is past the right boundary (indicates a bug)."""
+        return element.box.x > state.end_x - element.box.w
+
     def has_right_touch(self, element, state, objects=None):
         """Check if element has collision on the right side."""
         if objects is None:
             objects = self.solid_objects
 
         # Create a test box slightly to the right of the element
-        test_box = element.box.copy()
-        test_box.x += 1  # Move 1 pixel to the right
+        test_box1 = element.box.copy()
+        test_box2 = element.box.copy()
+        test_box1.x += 1  # Move 1 pixel to the right
+        test_box1.y += 1  # Move 1 pixel down
+        test_box2.x += 1  # Move 1 pixel to the right
+        test_box2.y -= 1  # Move 1 pixel up
 
         # Gather all boxes from state.boxes based on the provided keys
         boxes = []
         for name in objects:
             boxes += state.boxes.get(name, [])
 
-        # Check each box for a collision using the simple collides method
+        # Check each box for a collision using direct colliderect (same as game)
         for box in boxes:
             if box is element:
                 continue
-            if self.game.vision.collides(test_box, box.box):
+            if test_box1.colliderect(box.box) or test_box2.colliderect(box.box):
                 return True
         return False
 
@@ -117,19 +137,23 @@ class Model:
             objects = self.solid_objects
 
         # Create a test box slightly to the left of the element
-        test_box = element.box.copy()
-        test_box.x -= 1  # Move 1 pixel to the left
+        test_box1 = element.box.copy()
+        test_box2 = element.box.copy()
+        test_box1.x -= 1  # Move 1 pixel to the left
+        test_box1.y += 1  # Move 1 pixel down
+        test_box2.x -= 1  # Move 1 pixel to the left
+        test_box2.y -= 1  # Move 1 pixel up
 
         # Gather all boxes from state.boxes based on the provided keys
         boxes = []
         for name in objects:
             boxes += state.boxes.get(name, [])
 
-        # Check each box for a collision using the simple collides method
+        # Check each box for a collision using direct colliderect (same as game)
         for box in boxes:
             if box is element:
                 continue
-            if self.game.vision.collides(test_box, box.box):
+            if test_box1.colliderect(box.box) or test_box2.colliderect(box.box):
                 return True
         return False
 
@@ -138,20 +162,22 @@ class Model:
         if objects is None:
             objects = self.solid_objects
 
-        # Create a test box slightly below the element
+        # Create a test box slightly below the element - EXACTLY like game's check_is_falling
         test_box = element.box.copy()
-        test_box.y += 1  # Move 1 pixel down
+        test_box.y += 1  # Use same tolerance as game (1 pixel, not 2)
 
         # Gather all boxes from state.boxes based on the provided keys
         boxes = []
         for name in objects:
             boxes += state.boxes.get(name, [])
 
-        # Check each box for a collision using the simple collides method
+        # Use EXACTLY the same collision detection as game's check_is_falling
+        # This ensures identical edge detection behavior at pipe boundaries
         for box in boxes:
             if box is element:
                 continue
-            if self.game.vision.collides(test_box, box.box):
+            # Use pygame's colliderect directly (same as game.vision.collides)
+            if test_box.colliderect(box.box):
                 return True
         return False
 
@@ -169,11 +195,11 @@ class Model:
         for name in objects:
             boxes += state.boxes.get(name, [])
 
-        # Check each box for a collision using the simple collides method
+        # Check each box for a collision using direct colliderect (same as game)
         for box in boxes:
             if box is element:
                 continue
-            if self.game.vision.collides(test_box, box.box):
+            if test_box.colliderect(box.box):
                 return True
         return False
 

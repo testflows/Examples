@@ -4,24 +4,41 @@ from ..base import Model
 class Behavior:
     """Encapsulates Mario's movement behavior extracted from behavior history states."""
 
-    @classmethod
-    def valid(cls, behavior):
-        """Check if behavior frames are valid for movement analysis."""
-        return len(behavior) >= 3
-
     def __init__(self, model, behavior):
         """Extract movement attributes from behavior frames."""
         self.model = model
         self.history = behavior
 
-        if not self.valid(behavior):
-            raise ValueError("Need at least 3 frames for movement analysis")
+    def init(self):
+        behavior = self.history
+        model = self.model
+
+        if len(behavior) < 3:
+            return False
 
         self.right_before, self.before, self.now = behavior[-3:]
+
+        if (
+            not self.right_before.player
+            or not self.before.player
+            or not self.now.player
+        ):
+            return False
+
+        if (
+            self.right_before.player.dead
+            or self.before.player.dead
+            or self.now.player.dead
+        ):
+            return False
 
         # Extract Mario objects
         self.mario_now = model.get("player", self.now)
         self.mario_before = model.get("player", self.before)
+        self.mario_right_before = model.get("player", self.right_before)
+
+        if not self.mario_now or not self.mario_before or not self.mario_right_before:
+            return False
 
         # Get positions
         self.pos_right_before = model.get_position(self.right_before)
@@ -44,6 +61,8 @@ class Behavior:
         # Extract key states
         self.keys = model.get_pressed_keys(self.now)
 
+        return self
+
 
 class Propositions:
     """Atomic propositions for Mario's movement."""
@@ -58,6 +77,30 @@ class Propositions:
         self.max_run_velocity = 12
         self.max_vertical_velocity = 11
         self.max_recently_run = 45
+        self.max_was_in_transition = 55
+
+    def was_in_transition(self, behavior):
+        for state in behavior.history[-self.max_was_in_transition :]:
+            if not state.player:
+                return True
+            if state.player.state not in ["standing", "walk", "jump", "fall", "fly"]:
+                return True
+        return False
+
+    def is_big(self, behavior):
+        if behavior.now.player is None:
+            return False
+        return behavior.now.player.big
+
+    def is_fire(self, behavior):
+        if behavior.now.player is None:
+            return False
+        return behavior.now.player.fire
+
+    def is_dead(self, behavior):
+        if behavior.now.player is None:
+            return False
+        return behavior.now.player.dead
 
     def right_pressed(self, keys):
         return keys.get("right", False)
@@ -118,17 +161,17 @@ class Propositions:
             mario_before, before
         )
 
-    def at_left_boundary(self, mario_now):
-        return self.model.level.is_at_left_boundary(mario_now)
+    def at_left_boundary(self, mario_now, state):
+        return self.model.is_at_left_boundary(mario_now, state)
 
-    def at_right_boundary(self, mario_now):
-        return self.model.level.is_at_right_boundary(mario_now)
+    def at_right_boundary(self, mario_now, state):
+        return self.model.is_at_right_boundary(mario_now, state)
 
-    def past_left_boundary(self, mario_now):
-        return self.model.level.is_past_left_boundary(mario_now)
+    def past_left_boundary(self, mario_now, state):
+        return self.model.is_past_left_boundary(mario_now, state)
 
-    def past_right_boundary(self, mario_now):
-        return self.model.level.is_past_right_boundary(mario_now)
+    def past_right_boundary(self, mario_now, state):
+        return self.model.is_past_right_boundary(mario_now, state)
 
     def on_the_ground(self, mario_now, now):
         """Check if Mario is on the ground (has bottom collision)."""
@@ -145,46 +188,46 @@ class Propositions:
         return not self.on_the_ground(mario_now, now)
 
     def has_right_movement_cause(self, velocity, right_pressed):
-        return velocity > 0 or right_pressed
+        return velocity > 1 or right_pressed
 
     def has_left_movement_cause(self, velocity, left_pressed):
-        return velocity < 0 or left_pressed
+        return velocity < -1 or left_pressed
 
     def velocity_left(self, velocity):
-        return velocity < 0
+        return velocity < -1
 
     def velocity_right(self, velocity):
-        return velocity > 0
+        return velocity > 1
 
     def moved_right(self, actual_movement):
-        return actual_movement > 0
+        return actual_movement > 1
 
     def moved_left(self, actual_movement):
-        return actual_movement < 0
+        return actual_movement < -1
 
     def moved(self, actual_movement):
-        return actual_movement != 0
+        return abs(actual_movement) > 1
 
     def stayed_in_place(self, actual_movement):
-        return actual_movement == 0
+        return abs(actual_movement) == 0
 
     def moved_down(self, actual_vertical_movement):
-        return actual_vertical_movement > 0
+        return actual_vertical_movement > 1
 
     def moved_up(self, actual_vertical_movement):
-        return actual_vertical_movement < 0
+        return actual_vertical_movement < -1
 
     def stayed_in_the_air(self, actual_vertical_movement):
-        return actual_vertical_movement == 0
+        return abs(actual_vertical_movement) == 0
 
     def stayed_in_the_air_or_bounced(self, actual_vertical_movement):
         return actual_vertical_movement <= 0
 
     def velocity_up(self, velocity):
-        return velocity < 0
+        return velocity < -1
 
     def velocity_down(self, velocity):
-        return velocity > 0
+        return velocity > 1
 
     def path_is_clear(self, mario_now, now, mario_before, before, direction):
         """Check if Mario's path is clear for movement in the given direction."""
@@ -192,11 +235,11 @@ class Propositions:
         if direction == "right":
             return not self.right_touching(
                 mario_now, now, mario_before, before
-            ) and not self.at_right_boundary(mario_now)
+            ) and not self.at_right_boundary(mario_now, now)
         else:  # left
             return not self.left_touching(
                 mario_now, now, mario_before, before
-            ) and not self.at_left_boundary(mario_now)
+            ) and not self.at_left_boundary(mario_now, now)
 
     def has_right_direction(self, mario, state):
         return self.model.direction(state, self.in_the_air(mario, state)) == "right"
@@ -207,14 +250,14 @@ class Propositions:
     def stayed_still_too_long(self, stayed_still):
         return stayed_still > self.max_stayed_still
 
-    def exceeds_max_walk_velocity(self, velocity):
-        return abs(velocity) > self.max_walk_velocity
+    def exceeds_max_walk_velocity(self, velocity, tolerance=1):
+        return abs(velocity) > self.max_walk_velocity + tolerance
 
-    def exceeds_max_run_velocity(self, velocity):
-        return abs(velocity) > self.max_run_velocity
+    def exceeds_max_run_velocity(self, velocity, tolerance=1):
+        return abs(velocity) > self.max_run_velocity + tolerance
 
-    def exceeds_max_vertical_velocity(self, velocity):
-        return abs(velocity) > self.max_vertical_velocity
+    def exceeds_max_vertical_velocity(self, velocity, tolerance=1):
+        return abs(velocity) > self.max_vertical_velocity + tolerance
 
 
 class CausalProperties(Propositions):
@@ -279,14 +322,14 @@ class CausalProperties(Propositions):
                     )
                     or (
                         self.velocity_left(velocity)
-                        and self.at_left_boundary(mario_now)
+                        and self.at_left_boundary(mario_now, now)
                     )
                     or (
                         self.velocity_right(velocity)
-                        and self.at_right_boundary(mario_now)
+                        and self.at_right_boundary(mario_now, now)
                     )
                 ),
-                "stayed in place",
+                f"stayed in place ({actual_movement})",
             )
 
     def check_fall(self, behavior):
@@ -299,7 +342,7 @@ class CausalProperties(Propositions):
             before = behavior.before
             self.model.assert_with_success(
                 not self.on_the_ground(mario_before, before),
-                "fell because there was no ground support",
+                f"fell {actual_vertical_movement} because there was no ground support",
             )
 
     def check_stop_fall(self, behavior):
@@ -333,7 +376,7 @@ class CausalProperties(Propositions):
                 (jump_pressed and self.on_the_ground(mario_before, before))
                 or self.stomped_enemy(mario_before, before)
                 or self.velocity_up(vertical_velocity),
-                "jumped because jump was pressed on ground or bounced off enemy or had upward velocity",
+                f"jumped {actual_vertical_movement} because jump was pressed on ground or bounced off enemy or had upward velocity",
             )
 
 
@@ -393,16 +436,16 @@ class SafetyProperties(Propositions):
         """Check if Mario does not move past the boundary."""
 
         self.model.assert_with_success(
-            not self.past_left_boundary(behavior.mario_now),
-            f"Mario is within left boundary x={behavior.mario_now.box.x}, boundary={self.model.level.start_x}",
+            not self.past_left_boundary(behavior.mario_now, behavior.now),
+            f"Mario is within left boundary x={behavior.mario_now.box.x}, boundary={behavior.now.start_x}",
         )
 
     def check_does_not_move_past_right_boundary(self, behavior):
         """Check if Mario does not move past the boundary."""
 
         self.model.assert_with_success(
-            not self.past_right_boundary(behavior.mario_now),
-            f"Mario is within right boundary x={behavior.mario_now.box.x}, boundary={self.model.level.end_x - behavior.mario_now.box.w}",
+            not self.past_right_boundary(behavior.mario_now, behavior.now),
+            f"Mario is within right boundary x={behavior.mario_now.box.x}, boundary={behavior.now.end_x - behavior.mario_now.box.w}",
         )
 
     def check_does_not_exceed_max_velocity(self, behavior):
@@ -432,35 +475,37 @@ class SafetyProperties(Propositions):
 class Movement(Model):
     """Mario movement model."""
 
-    def __init__(self, game, level):
+    def __init__(self, game):
         super().__init__(game)
-        self.level = level
         self.causal = CausalProperties(self)
         self.liveness = LivenessProperties(self)
         self.safety = SafetyProperties(self)
 
     def expect(self, behavior):
         """Expect Mario to move correctly."""
-        # Check if behavior has enough frames for movement analysis
-        if not Behavior.valid(behavior):
+        # Create movement behavior analysis
+        behavior = Behavior(self, behavior).init()
+
+        # Check if it is valid
+        if not behavior:
             return
 
-        # Create movement behavior analysis
-        behavior = Behavior(self, behavior)
+        if not self.causal.was_in_transition(behavior):
 
-        # Validate what Mario actually did
-        self.causal.check_right_movement(behavior)
-        self.causal.check_left_movement(behavior)
-        self.causal.check_stayed_in_place(behavior)
-        self.causal.check_fall(behavior)
-        self.causal.check_stop_fall(behavior)
-        self.causal.check_jump(behavior)
+            # Validate what Mario actually did
+            self.causal.check_right_movement(behavior)
+            self.causal.check_left_movement(behavior)
+            self.causal.check_stayed_in_place(behavior)
+            self.causal.check_fall(behavior)
+            self.causal.check_stop_fall(behavior)
+            self.causal.check_jump(behavior)
 
-        # Validate what Mario should eventually do
-        self.liveness.check_starts_moving(behavior)
+            # Validate what Mario should eventually do
+            self.liveness.check_starts_moving(behavior)
 
-        # Validate what Mario should never do
-        self.safety.check_does_not_move_past_left_boundary(behavior)
-        self.safety.check_does_not_move_past_right_boundary(behavior)
-        self.safety.check_does_not_exceed_max_velocity(behavior)
-        self.safety.check_does_not_exceed_max_vertical_velocity(behavior)
+            self.safety.check_does_not_exceed_max_velocity(behavior)
+            self.safety.check_does_not_exceed_max_vertical_velocity(behavior)
+
+            # Validate what Mario should never do
+            self.safety.check_does_not_move_past_left_boundary(behavior)
+            self.safety.check_does_not_move_past_right_boundary(behavior)

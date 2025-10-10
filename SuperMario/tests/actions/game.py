@@ -26,12 +26,12 @@ all_key_codes = [code for name, code in vars(pg).items() if name.startswith("K_"
 
 
 class PressedKeys(msgspec.Struct):
-    right: int
-    left: int
-    jump: int
-    action: int
-    down: int
-    enter: int
+    right: int = 0
+    left: int = 0
+    jump: int = 0
+    action: int = 0
+    down: int = 0
+    enter: int = 0
 
     def __hash__(self):
         """Make PressedKeys hashable by returning hash of tuple of field values."""
@@ -50,6 +50,7 @@ class Player:
             "y_vel",
             "state",
             "big",
+            "fire",
             "dead",
             "invincible",
             "hurt_invincible",
@@ -103,16 +104,26 @@ class BehaviorState:
     def __init__(self, keys, boxes, viewport, frame, state):
         self.keys = deepcopy(keys)
         self.boxes = boxes
-        self.viewport = deepcopy(viewport)
-        self.frame = frame
         self.player = None
+        self.level_num = None
+        self.start_x = None
+        self.end_x = None
 
         # Extract player state
         if hasattr(state, "player"):
             self.player = Player(state.player)
 
+        if hasattr(state, "persist"):
+            self.level_num = state.persist.get("level num")
+
+        if hasattr(state, "start_x"):
+            self.start_x = state.start_x
+
+        if hasattr(state, "end_x"):
+            self.end_x = state.end_x
+
     def __str__(self):
-        return f"BehaviorState(keys={self.keys}, boxes={self.boxes}, viewport={self.viewport}, player={self.player}, frame=...)"
+        return f"BehaviorState(level_num={self.level_num}, keys={self.keys}, player={self.player}, ...)"
 
     def __repr__(self):
         return str(self)
@@ -189,7 +200,7 @@ def simulate_keypress(key):
 
 def is_key_pressed(game, key):
     """Return True if the given key is pressed in the state."""
-    return game.keys.key_code(key) in game.keys
+    return 1 if game.keys.key_code(key) in game.keys else 0
 
 
 def get_pressed_keys(game):
@@ -302,10 +313,10 @@ def wait_ready(self, game, seconds=3):
 
 
 @TestStep(Given)
-def start(self, ready=True, quit=True):
+def start(self, ready=True, quit=True, fps=60):
     """Start the game and wait for it to be ready."""
 
-    game = Control()
+    game = Control(fps=fps)
 
     state_dict = {
         c.MAIN_MENU: main_menu.Menu(),

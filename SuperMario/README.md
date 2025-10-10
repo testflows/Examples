@@ -36,10 +36,10 @@ python3 main.py
 ## 🧪 Running the tests
 
 ### 🎯 Classical Tests (Default)
-Run basic movement tests without model:
-```bash
-python3 tests/run.py
-```
+* Run basic movement tests without model:
+  ```bash
+  python3 tests/run.py
+  ```
 
 ### 🤖 Tests with Model
 * Run tests using the behavior model:

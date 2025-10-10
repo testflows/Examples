@@ -105,7 +105,7 @@ class BehaviorState:
         self.keys = deepcopy(keys)
         self.boxes = boxes
         self.frame = None
-        if self.context.save_video:
+        if current().context.save_video:
             self.frame = frame
         self.player = None
         self.level_num = None

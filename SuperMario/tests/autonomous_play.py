@@ -46,6 +46,9 @@ def play(self, path, play_seconds=1, with_model=False):
 
     game = self.context.game
 
+    with Given("setup for autonomous play"):
+        actions.setup(game=game, overlays=[])
+
     if with_model:
         self.context.model = models.Game(game)
 
@@ -112,7 +115,7 @@ def scenario(
 
     for part in range(play_seconds // interval):
         for i in range(tries):
-            with Scenario(f"interval {part}:try {i}"):
+            with Scenario(f"interval {part}-{i}"):
                 play(path=path, play_seconds=interval, with_model=with_model)
 
             if path not in self.context.paths.paths:

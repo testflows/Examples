@@ -104,6 +104,9 @@ class BehaviorState:
     def __init__(self, keys, boxes, viewport, frame, state):
         self.keys = deepcopy(keys)
         self.boxes = boxes
+        self.frame = None
+        if self.context.save_video:
+            self.frame = frame
         self.player = None
         self.level_num = None
         self.start_x = None

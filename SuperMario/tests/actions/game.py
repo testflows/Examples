@@ -144,6 +144,13 @@ class Control(tools.Control):
         self.behavior = []
         self.play = None
         self.manual = False
+        self.ticks = 0
+
+    def update(self):
+        self.current_time = self.ticks * 1000 // self.fps
+        if self.state.done:
+            self.flip_state()
+        self.state.update(self.screen, self.keys, self.current_time)
 
     def event_loop(self):
         for event in pg.event.get():
@@ -189,6 +196,7 @@ class Control(tools.Control):
                 yield self
                 pg.display.update()
                 self.clock.tick(self.fps)
+                self.ticks += 1
 
         self.play = _main()
 

@@ -111,6 +111,7 @@ class BehaviorState:
         self.level_num = None
         self.start_x = None
         self.end_x = None
+        self.current_time = 0
 
         # Extract player state
         if hasattr(state, "player"):
@@ -118,6 +119,7 @@ class BehaviorState:
 
         if hasattr(state, "persist"):
             self.level_num = state.persist.get("level num")
+            self.current_time = int(state.persist.get("current time") // 1000)
 
         if hasattr(state, "start_x"):
             self.start_x = state.start_x
@@ -316,13 +318,25 @@ def wait_ready(self, game, seconds=3):
 
 
 @TestStep(Given)
-def start(self, ready=True, quit=True, fps=60):
-    """Start the game and wait for it to be ready."""
+def start(self, ready=True, quit=True, fps=None, start_level=None):
+    """Start the game and wait for it to be ready.
+
+    Args:
+        ready: Wait for game to be ready before yielding
+        quit: Quit pygame when done
+        fps: Frames per second
+        initial_level: Starting level number (default: None, uses level 1)
+    """
+    if fps is None:
+        fps = self.context.fps
+
+    if start_level is None:
+        start_level = self.context.start_level
 
     game = Control(fps=fps)
 
     state_dict = {
-        c.MAIN_MENU: main_menu.Menu(),
+        c.MAIN_MENU: main_menu.Menu(start_level=start_level),
         c.LOAD_SCREEN: load_screen.LoadScreen(),
         c.LEVEL: level.Level(),
         c.GAME_OVER: load_screen.GameOver(),

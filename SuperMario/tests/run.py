@@ -13,6 +13,19 @@ import models.game
 
 
 def argparser(parser):
+    """Add arguments to the parser."""
+    parser.add_argument(
+        "--fps",
+        type=int,
+        default=60,
+        help="frames per second (default: 60)",
+    )
+    parser.add_argument(
+        "--start-level",
+        type=int,
+        default=1,
+        help="starting level (default: 1)",
+    )
     parser.add_argument("--save-video", action="store_true", help="save video")
     parser.add_argument(
         "--play-seconds",
@@ -60,12 +73,20 @@ def argparser(parser):
         help="save paths to file (default: False)",
     )
 
+    parser.add_argument(
+        "--play-best-path",
+        action="store_true",
+        help="play the best path (default: False)",
+    )
+
 
 @TestModule
 @Name("super mario")
 @ArgumentParser(argparser)
 def module(
     self,
+    fps=60,
+    start_level=1,
     save_video=False,
     with_model=False,
     play_seconds=30,
@@ -74,9 +95,12 @@ def module(
     paths_file="paths.json",
     load_paths=False,
     save_paths=False,
+    play_best_path=False,
 ):
     """Run tests for the Super Mario Bros. game."""
 
+    self.context.fps = fps
+    self.context.start_level = start_level
     self.context.save_video = save_video
     self.context.model = None
 
@@ -102,6 +126,7 @@ def module(
                 paths_file=paths_file,
                 load_paths=load_paths,
                 save_paths=save_paths,
+                play_best_path=play_best_path,
             )
 
     elif with_model:

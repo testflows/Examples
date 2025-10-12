@@ -13,6 +13,13 @@ class LoadScreen(tools.State):
         self.start_time = current_time
         self.persist = persist
         self.game_info = self.persist
+        
+        # Increment level number here during transition, not in the level state
+        # This prevents capturing new level_num with old player position
+        if self.persist.get(c.LEVEL_COMPLETED, False):
+            self.game_info[c.LEVEL_NUM] += 1
+            self.persist[c.LEVEL_COMPLETED] = False
+        
         self.next = self.set_next_state()
         
         info_state = self.set_info_state()

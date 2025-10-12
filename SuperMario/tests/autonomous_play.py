@@ -23,10 +23,10 @@ def select_weighted_move():
 
         # Give fuzzy much higher weight for exploration
         if move_name == "fuzzy":
-            weight = 5.0
+            weight = 10.0
         # Prefer right moves over left moves
         elif "right" in move_name:
-            weight = 5.0
+            weight = 2.0
         elif "left" in move_name:
             weight = 0.5
 
@@ -37,12 +37,12 @@ def select_weighted_move():
 
 
 @TestScenario
-def play(self, path, play_seconds=1, with_model=False):
+def play(self, path, play_seconds=1, with_model=False, play_best_path=False):
     """Allow autonomous play of the game for a specified duration
     with behavior model validation."""
 
     with Given("start the game"):
-        self.context.game = actions.start(quit=False, fps=60 * 5)
+        self.context.game = actions.start(quit=False)
 
     game = self.context.game
 
@@ -65,7 +65,18 @@ def play(self, path, play_seconds=1, with_model=False):
         else:
             new_path += move()
 
-    for input in path.input_sequence:
+    # Use triangular distribution biased towards complete sequence
+    sequence_length = len(path.input_sequence)
+    stop_fraction = random.triangular(0, 1.05, 1.05)  # mode slightly above 1
+    stop_index = max(1, min(sequence_length, round(stop_fraction * sequence_length)))
+
+    # If playing the best path, stop at the end of the path
+    if play_best_path:
+        stop_index = sequence_length + 1
+
+    note(f"Playing {stop_index} of {sequence_length} frames from path")
+
+    for input in path.input_sequence[:stop_index]:
         actions.press_keys(game, input)
         actions.play(game, frames=1, model=model)
         game_path.append(input, game.behavior[-1])
@@ -87,11 +98,12 @@ def play(self, path, play_seconds=1, with_model=False):
 def scenario(
     self,
     play_seconds,
-    interval=30,
+    interval=20,
     tries=3,
     save_paths=True,
     load_paths=True,
     paths_file="paths.json",
+    play_best_path=False,
     with_model=False,
 ):
     """Allow autonomous play of the game for a specified duration
@@ -111,12 +123,23 @@ def scenario(
         with Given("load paths from file"):
             paths.load(filename=paths_file)
 
-    path = self.context.paths.select()
+    if play_best_path:
+        play_seconds = 1
+        interval = 1
+        tries = 1
+        save_paths = False
+
+    path = self.context.paths.select(best_path=play_best_path)
 
     for part in range(play_seconds // interval):
         for i in range(tries):
             with Scenario(f"interval {part}-{i}"):
-                play(path=path, play_seconds=interval, with_model=with_model)
+                play(
+                    path=path,
+                    play_seconds=interval,
+                    with_model=with_model,
+                    play_best_path=play_best_path,
+                )
 
             if path not in self.context.paths.paths:
                 # If the path is no longer in the paths list
@@ -124,6 +147,7 @@ def scenario(
                 break
 
         # Select the next path
+        self.context.paths.clean()
         path = self.context.paths.select()
 
         # Save all paths to file if requested

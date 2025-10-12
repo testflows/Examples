@@ -16,8 +16,8 @@ def move(func):
 @move
 def fuzzy(
     starting_keys: actions.PressedKeys = None,
-    flip_probability: float = 0.10,
-    length: int = 30,
+    flip_probability: float = 0.05,
+    length: int = 10,
 ):
     """Generate a sequence of input actions."""
     inputs = []
@@ -54,8 +54,18 @@ def stay_still_short(length: int = 5):
 
 
 @move
+def walk_right_very_long(length: int = 60):
+    return [actions.PressedKeys(right=1)] * length
+
+
+@move
 def walk_right_long(length: int = 30):
     return [actions.PressedKeys(right=1)] * length
+
+
+@move
+def walk_left_very_long(length: int = 60):
+    return [actions.PressedKeys(left=1)] * length
 
 
 @move
@@ -64,8 +74,18 @@ def walk_left_long(length: int = 30):
 
 
 @move
+def run_right_very_long(length: int = 60):
+    return [actions.PressedKeys(right=1, action=1)] * length
+
+
+@move
 def run_right_long(length: int = 30):
     return [actions.PressedKeys(right=1, action=1)] * length
+
+
+@move
+def run_left_very_long(length: int = 60):
+    return [actions.PressedKeys(left=1, action=1)] * length
 
 
 @move
@@ -74,8 +94,31 @@ def run_left_long(length: int = 30):
 
 
 @move
+def jump_up_very_high(length: int = 120):
+    return [actions.PressedKeys(jump=1)] * length
+
+
+@move
 def jump_up_high(length: int = 60):
     return [actions.PressedKeys(jump=1)] * length
+
+
+@move
+def run_right_then_jump_high(length: int = 60):
+    inputs = run_right_long(length)
+    return inputs + jump_up_high(length)
+
+
+@move
+def run_right_then_jump_right_high(length: int = 60):
+    inputs = run_right_long(length)
+    return inputs + jump_up_right_high(length)
+
+
+@move
+def run_right_then_jump_up_right_very_high_action(length: int = 60):
+    inputs = run_right_long(length)
+    return inputs + jump_up_right_very_high_action(length)
 
 
 @move
@@ -84,13 +127,28 @@ def jump_up_right_high(length: int = 60):
 
 
 @move
+def jump_up_left_very_high(length: int = 120):
+    return [actions.PressedKeys(jump=1, left=1)] * length
+
+
+@move
 def jump_up_left_high(length: int = 60):
     return [actions.PressedKeys(jump=1, left=1)] * length
 
 
 @move
+def jump_up_right_very_high_action(length: int = 120):
+    return [actions.PressedKeys(jump=1, right=1, action=1)] * length
+
+
+@move
 def jump_up_right_high_action(length: int = 60):
     return [actions.PressedKeys(jump=1, right=1, action=1)] * length
+
+
+@move
+def jump_up_left_very_high_action(length: int = 120):
+    return [actions.PressedKeys(jump=1, left=1, action=1)] * length
 
 
 @move

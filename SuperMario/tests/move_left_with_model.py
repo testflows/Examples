@@ -14,5 +14,5 @@ def scenario(self):
         actions.setup(game=game, overlays=[("player", 0), ("player", -1)])
 
     with When("press the left key for 1 second"):
-        with actions.press_left():
+        with actions.press_left(game):
             actions.play(game, seconds=1, model=model)

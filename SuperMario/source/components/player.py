@@ -483,10 +483,10 @@ class Player(pg.sprite.Sprite):
             self.left_frames = frames[1]
             self.image = frames[1][frame_index]
         bottom = self.rect.bottom
-        centerx = self.rect.centerx
+        x = self.rect.x
         self.rect = self.image.get_rect()
         self.rect.bottom = bottom
-        self.rect.centerx = centerx
+        self.rect.x = x
 
     def check_if_hurt_invincible(self):
         if self.hurt_invincible:

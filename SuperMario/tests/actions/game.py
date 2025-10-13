@@ -153,27 +153,18 @@ class Control(tools.Control):
         self.state.update(self.screen, self.keys, self.current_time)
 
     def event_loop(self):
-        for event in pg.event.get():
-            if event.type == pg.QUIT:
-                self.done = True
-            elif event.type == pg.KEYDOWN:
-                if self.manual:
-                    pressed = pg.key.get_pressed()
-                    for code in all_key_codes:
-                        if pressed[code]:
-                            self.keys[code] = True
-                else:
-                    if hasattr(event, "key"):
-                        self.keys[event.key] = True
-            elif event.type == pg.KEYUP:
-                if self.manual:
-                    pressed = pg.key.get_pressed()
-                    for code in all_key_codes:
-                        if code in self.keys and not pressed[code]:
-                            del self.keys[code]
-                else:
-                    if hasattr(event, "key") and event.key in self.keys:
-                        del self.keys[event.key]
+        if self.manual:
+            for event in pg.event.get():
+                if event.type == pg.QUIT:
+                    self.done = True
+                elif event.type == pg.KEYDOWN:
+                    self.keys = pg.key.get_pressed()
+                elif event.type == pg.KEYUP:
+                    self.keys = pg.key.get_pressed()
+        else:
+            # In automated mode, clear event queue without processing
+            # This prevents stray events from affecting deterministic execution
+            pg.event.clear()
 
     def main(self):
         """Main game loop."""
@@ -202,13 +193,11 @@ class Control(tools.Control):
 
 
 @contextmanager
-def simulate_keypress(key):
+def simulate_keypress(game, key):
     """Simulate a key press and release event for the given key."""
-    keydown_event = pg.event.Event(pg.KEYDOWN, key=key)
-    pg.event.post(keydown_event)
+    game.keys[key] = True
     yield
-    keyup_event = pg.event.Event(pg.KEYUP, key=key)
-    pg.event.post(keyup_event)
+    del game.keys[key]
 
 
 def is_key_pressed(game, key):
@@ -238,39 +227,39 @@ def press_keys(game, press: PressedKeys, pressed_keys: PressedKeys = None):
         pressed = getattr(press, key_name)
         current = getattr(pressed_keys, key_name)
         if pressed and not current:
-            pg.event.post(pg.event.Event(pg.KEYDOWN, key=keys[key_name]))
+            game.keys[keys[key_name]] = True
         elif not pressed and current:
-            pg.event.post(pg.event.Event(pg.KEYUP, key=keys[key_name]))
+            del game.keys[keys[key_name]]
 
 
-def press_enter():
+def press_enter(game):
     """Press the enter key."""
-    return simulate_keypress(key=keys["enter"])
+    return simulate_keypress(game, key=keys["enter"])
 
 
-def press_right():
+def press_right(game):
     """Press the right arrow key."""
-    return simulate_keypress(key=keys["right"])
+    return simulate_keypress(game, key=keys["right"])
 
 
-def press_left():
+def press_left(game):
     """Press the left arrow key."""
-    return simulate_keypress(key=keys["left"])
+    return simulate_keypress(game, key=keys["left"])
 
 
-def press_down():
+def press_down(game):
     """Press the down arrow key."""
-    return simulate_keypress(key=keys["down"])
+    return simulate_keypress(game, key=keys["down"])
 
 
-def press_jump():
+def press_jump(game):
     """Press the jump key."""
-    return simulate_keypress(key=keys["jump"])
+    return simulate_keypress(game, key=keys["jump"])
 
 
-def press_action():
+def press_action(game):
     """Press the action key."""
-    return simulate_keypress(keys["action"])
+    return simulate_keypress(game, keys["action"])
 
 
 def play(game, seconds=1, frames=None, model=None):
@@ -318,11 +307,12 @@ def wait_ready(self, game, seconds=3):
     """Wait for game to be loaded and ready."""
     next(game.play)
 
-    with press_enter():
+    with press_enter(game):
         next(game.play)
 
     for _ in range(seconds * game.fps):
         next(game.play)
+    note(f"Game ready after { game.ticks } ticks")
 
 
 @TestStep(Given)

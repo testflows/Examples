@@ -56,9 +56,11 @@ class GamePath(msgspec.Struct):
         return state.player.dead
 
     def _score(self, state):
-        """Score the path based on level, position, and time.
+        """Score the path based on the player's position, level number, and time.
 
-        Prefers higher level > further right > shorter time.
+        Prefers paths that reach higher positions in shorter time.
+        Time is calculated from input sequence length divided by fps.
+        Score format: level(xxx)-position(xxxxx)-time(xxx)
         """
         if state.player is None:
             return 0
@@ -101,7 +103,7 @@ class GamePaths(msgspec.Struct):
     paths: list[GamePath] = []
 
     def backtrack_path(self, path: GamePath, backtrack_frames: int = None):
-        """Remove the last N frames from a path.
+        """Backtrack the path if the score before the dead state is higher than the best path.
 
         Args:
             path: The GamePath to backtrack
@@ -129,7 +131,7 @@ class GamePaths(msgspec.Struct):
         )
 
     def split_path(self, path: GamePath, backtrack_frames: int = None):
-        """Extract the highest-scoring intermediate state from a path.
+        """Split the path into two parts if in the middle of the path the score is higher than the best.
 
         Args:
             path: The GamePath to split
@@ -206,10 +208,13 @@ class GamePaths(msgspec.Struct):
             self.paths.remove(path)
 
     def clean(self, score_threshold_px: int = 100) -> None:
-        """Remove redundant paths with similar scores.
+        """Clean the paths list by collapsing paths with similar max scores.
+
+        Paths whose max scores are within the threshold are considered similar,
+        and only the highest scoring path from each group is kept.
 
         Args:
-            score_threshold_px: Position threshold in pixels (default: 100)
+            score_threshold_px: Position difference threshold in pixels for grouping similar paths (default: 100)
         """
         score_threshold = score_threshold_px * 1000  # pixels * time_score
 
@@ -239,9 +244,10 @@ class GamePaths(msgspec.Struct):
         note(f"Paths after cleaning: {len(self.paths)}")
 
     def select(self, best_path=False) -> Path:
-        """Select a path using exponential weighting.
+        """Select a path from the paths list based on the score using exponential weighting.
 
-        Best path selected ~70% of the time, others exponentially weighted.
+        The best path (highest score) is selected ~70% of the time, with remaining probability
+        distributed among other paths using exponential weighting.
         """
         if current().context.always_pick_best_path:
             best_path = True
@@ -282,11 +288,11 @@ class GamePaths(msgspec.Struct):
             total_exp_weight = sum(exp_weights)
             normalized_exp_weights = [w / total_exp_weight for w in exp_weights]
 
-            # Combine: best path gets 50% base + its share of remaining 50%
+            # Combine: best path gets 70% + its share of remaining 30%
             weights = [
                 best_weight + (1 - best_weight) * w for w in normalized_exp_weights
             ]
-            # Adjust all other paths to only get their share of remaining 50%
+            # Adjust all other paths to only get their share of remaining 30%
             weights[0] = best_weight + (1 - best_weight) * normalized_exp_weights[0]
             for i in range(1, len(weights)):
                 weights[i] = (1 - best_weight) * normalized_exp_weights[i]

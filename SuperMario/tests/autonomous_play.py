@@ -29,7 +29,7 @@ def select_weighted_move(weights=None):
 
 
 @TestScenario
-def play(self, path, play_seconds=1, with_model=False):
+def play(self, path, stop_index=None, play_seconds=1, with_model=False):
     """Allow autonomous play of the game for a specified duration
     with behavior model validation."""
 
@@ -57,13 +57,10 @@ def play(self, path, play_seconds=1, with_model=False):
         else:
             new_path += move()
 
-    # Use triangular distribution biased towards complete sequence
     sequence_length = len(path.input_sequence)
-    stop_fraction = random.triangular(0, 1.05, 1.05)  # mode slightly above 1
-    stop_index = max(1, min(sequence_length, round(stop_fraction * sequence_length)))
 
     # If playing the best path, stop at the end of the path
-    if self.context.always_pick_full_path:
+    if self.context.always_pick_full_path or stop_index is None:
         stop_index = sequence_length + 1
 
     note(f"Playing {stop_index - 1} of {sequence_length} frames from path")
@@ -125,10 +122,12 @@ def scenario(
     for part in range(play_seconds // interval):
         for i in range(tries):
             with Scenario(f"interval {part}-{i}"):
+                stop_index = path.select_stop_index()
                 play(
                     path=path,
                     play_seconds=interval,
                     with_model=with_model,
+                    stop_index=stop_index,
                 )
 
             if path not in self.context.paths.paths:

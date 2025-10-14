@@ -85,6 +85,19 @@ class GamePath(msgspec.Struct):
 
         return level_score + position_score + time_score
 
+    def select_stop_index(self, weights=None):
+        """Select a stop index for the path based on triangular distribution."""
+        if weights is None:
+            weights = {
+                "low": 0.6,
+                "high": 1.0,
+                "mode": 0.98,
+            }
+
+        sequence_length = len(self.input_sequence)
+        stop_fraction = random.triangular(**weights)
+        return max(1, min(sequence_length, round(stop_fraction * sequence_length)))
+
 
 class GamePaths(msgspec.Struct):
     paths: list[GamePath] = []
@@ -99,17 +112,22 @@ class GamePaths(msgspec.Struct):
         Returns:
             GamePath or None: Backtracked path if backtracking was performed, None otherwise
         """
+
         if backtrack_frames is None:
-            backtrack_frames = current().context.fps * 1
+            backtrack_frames = current().context.backtrack
 
         if len(path.input_sequence) < (backtrack_frames + 1):
             return None
 
+        note(
+            f"Backtracking {backtrack_frames} frames for path with score: {path.scores[-1]}"
+        )
+
         return GamePath(
-            input_sequence=path.input_sequence[:-backtrack_frames],
-            scores=path.scores[:-backtrack_frames],
-            hashes=path.hashes[:-backtrack_frames],
-            ticks=path.ticks[:-backtrack_frames],
+            input_sequence=path.input_sequence[: -(backtrack_frames + 1)],
+            scores=path.scores[: -(backtrack_frames + 1)],
+            hashes=path.hashes[: -(backtrack_frames + 1)],
+            ticks=path.ticks[: -(backtrack_frames + 1)],
         )
 
     def split_path(self, path: GamePath, backtrack_frames: int = None):

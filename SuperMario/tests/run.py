@@ -105,6 +105,13 @@ def argparser(parser):
         help="number of tries for autonomous play (default: 3)",
     )
 
+    parser.add_argument(
+        "--backtrack",
+        type=int,
+        default=None,
+        help="number of frames to backtrack (default: None)",
+    )
+
 
 @TestModule
 @Name("super mario")
@@ -126,6 +133,7 @@ def module(
     always_pick_best_path=False,
     interval=20,
     tries=3,
+    backtrack=None,
 ):
     """Run tests for the Super Mario Bros. game."""
 
@@ -143,6 +151,7 @@ def module(
     self.context.model = None
     self.context.always_pick_full_path = always_pick_full_path
     self.context.always_pick_best_path = always_pick_best_path
+    self.context.backtrack = backtrack if backtrack is not None else fps * 1
 
     if not autonomous:
         with Given("start the game"):

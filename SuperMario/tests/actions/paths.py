@@ -45,7 +45,7 @@ class GamePath(msgspec.Struct):
         self.ticks.append(state.current_time)
 
     def _hash(self, input_sequence):
-        """Compute hash dynamically from input_sequence."""
+        """Compute hash from input_sequence."""
         return hash(tuple(input_sequence))
 
     def _death(self, state):
@@ -106,11 +106,11 @@ class GamePaths(msgspec.Struct):
         """Backtrack the path if the score before the dead state is higher than the best path.
 
         Args:
-            path: The GamePath object to potentially backtrack
-            backtrack_frames: Number of frames to backtrack, default is 60
+            path: The GamePath to backtrack
+            backtrack_frames: Number of frames to remove (default: 60)
 
         Returns:
-            GamePath or None: Backtracked path if backtracking was performed, None otherwise
+            GamePath or None: Backtracked path, or None if path is too short
         """
 
         if backtrack_frames is None:
@@ -134,11 +134,11 @@ class GamePaths(msgspec.Struct):
         """Split the path into two parts if in the middle of the path the score is higher than the best.
 
         Args:
-            path: The GamePath object to potentially split
-            paths: The GamePaths context containing all stored paths
+            path: The GamePath to split
+            backtrack_frames: Number of frames to backtrack before searching
 
         Returns:
-            GamePath or None: Split path if splitting was performed, None otherwise
+            GamePath or None: Path up to best intermediate score, or None
         """
         if not self.paths:
             return None
@@ -161,7 +161,7 @@ class GamePaths(msgspec.Struct):
         return None
 
     def add(self, path: GamePath):
-        """Add a path to the paths list."""
+        """Add a path to the population, attempting to split it first."""
         if path in self.paths:
             note(f"Path already exists for score: {path.scores[-1]}")
             return
@@ -198,11 +198,11 @@ class GamePaths(msgspec.Struct):
             f.write(msgspec.json.encode(self))
 
     def sort(self) -> None:
-        """Sort the paths based on the score. Highest score first."""
+        """Sort paths by score, highest first."""
         self.paths.sort(key=lambda x: x.scores[-1], reverse=True)
 
     def delete(self, path: GamePath) -> None:
-        """Delete a path from the paths list."""
+        """Remove a path from the population."""
         if path in self.paths:
             note(f"Deleting path with score: {path.scores[-1]}")
             self.paths.remove(path)
@@ -307,7 +307,7 @@ class GamePaths(msgspec.Struct):
 
 @TestStep(Given)
 def load(self, filename):
-    """Load paths from a JSON file."""
+    """Load paths from file."""
     # On first iteration, load existing paths if requested
 
     if not os.path.exists(filename):
@@ -320,5 +320,5 @@ def load(self, filename):
 
 @TestStep(Finally)
 def save(self, filename):
-    """Save paths to a JSON file."""
+    """Save paths to file."""
     self.context.paths.save(filename=filename)

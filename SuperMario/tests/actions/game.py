@@ -1,13 +1,13 @@
 import msgspec
 import pygame as pg
+import imageio.v2 as imageio
+import numpy as np
 
 from copy import deepcopy
 from contextlib import contextmanager
 from source import tools
 from source import constants as c
 from source.states import main_menu, load_screen, level
-from PIL import Image
-
 
 from testflows.core import *
 from .vision import Vision
@@ -105,8 +105,10 @@ class BehaviorState:
         self.keys = deepcopy(keys)
         self.boxes = boxes
         self.frame = None
-        if current().context.save_video:
-            self.frame = frame
+        if current().context.video_writer:
+            frame = np.rot90(frame, k=-1)  # Rotate 270° counter-clockwise (90° clockwise)
+            frame = np.fliplr(frame)  # Flip horizontally
+            current().context.video_writer.append_data(frame)
         self.player = None
         self.level_num = None
         self.start_x = None
@@ -194,7 +196,7 @@ class Control(tools.Control):
 
 @contextmanager
 def simulate_keypress(game, key):
-    """Simulate a key press and release event for the given key."""
+    """Simulate a key press and release."""
     game.keys[key] = True
     yield
     del game.keys[key]
@@ -206,7 +208,7 @@ def is_key_pressed(game, key):
 
 
 def get_pressed_keys(game):
-    """Extract pressed keys from behavior state."""
+    """Extract currently pressed keys from game."""
 
     return PressedKeys(
         right=is_key_pressed(game, "right"),
@@ -219,7 +221,7 @@ def get_pressed_keys(game):
 
 
 def press_keys(game, press: PressedKeys, pressed_keys: PressedKeys = None):
-    """Press keys for a given number of frames using msgspec.Struct."""
+    """Update which keys are currently pressed."""
     if pressed_keys is None:
         pressed_keys = get_pressed_keys(game)
 
@@ -263,7 +265,7 @@ def press_action(game):
 
 
 def play(game, seconds=1, frames=None, model=None):
-    """Play the game for the specified number seconds or frames."""
+    """Play the game for the specified number of seconds or frames."""
     if frames is None:
         frames = int(seconds * game.fps)
 
@@ -290,16 +292,13 @@ def overlay(game, elements, color=Vision.color["red"]):
     game.behavior[-1].frame = pg.surfarray.array3d(game.screen)
 
 
-def save_video(game, path="output.gif", start=0):
-    """Save the video of the game's behavior."""
-    frames = []
-    for state in game.behavior[start:]:
-        image = Image.fromarray(state.frame)
-        image = image.transpose(Image.Transpose.ROTATE_270)
-        image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-        frames.append(image)
-    frames += [frames[-1]] * 30  # add a delay at the end of the video
-    frames[0].save(path, save_all=True, append_images=frames[1:], duration=33, loop=0)
+def save_video2(game, path="output.gif", start=0):
+    with imageio.get_writer(path, mode="I", duration=1 / 30) as writer:
+        for state in game.behavior[start:]:
+            writer.append_data(state.frame)
+
+        for _ in range(30):  # freeze last frame
+            writer.append_data(state.frame)
 
 
 @TestStep(When)
@@ -323,7 +322,7 @@ def start(self, ready=True, quit=True, fps=None, start_level=None):
         ready: Wait for game to be ready before yielding
         quit: Quit pygame when done
         fps: Frames per second
-        initial_level: Starting level number (default: None, uses level 1)
+        start_level: Starting level number (default: None, uses level 1)
     """
     if fps is None:
         fps = self.context.fps
@@ -359,6 +358,15 @@ def setup(self, game, overlays=None):
     overlays = overlays or []
     base_frame = len(game.behavior)
     try:
+        if current().context.save_video:
+            path = f"{name.basename(self.parent.name).replace(' ', '_')}.mp4"
+            current().context.video_writer = imageio.get_writer(
+                path,
+                fps=game.fps,
+                codec="libx264",
+                quality=8,
+                macro_block_size=1,
+            ).__enter__()
         yield
     finally:
         if overlays:
@@ -374,11 +382,5 @@ def setup(self, game, overlays=None):
                         for name, offset in overlays
                     ],
                 )
-
-        if self.context.save_video:
-            with By("saving video"):
-                save_video(
-                    game,
-                    path=f"{name.basename(self.parent.name).replace(' ', '_')}.gif",
-                    start=base_frame,
-                )
+        if current().context.save_video:
+            current().context.video_writer.__exit__(None, None, None)

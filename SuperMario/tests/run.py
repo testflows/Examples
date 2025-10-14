@@ -148,6 +148,7 @@ def module(
     self.context.fps = fps
     self.context.start_level = start_level
     self.context.save_video = save_video
+    self.context.video_writer = None
     self.context.model = None
     self.context.always_pick_full_path = always_pick_full_path
     self.context.always_pick_best_path = always_pick_best_path

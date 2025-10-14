@@ -45,7 +45,7 @@ class GamePath(msgspec.Struct):
         self.ticks.append(state.current_time)
 
     def _hash(self, input_sequence):
-        """Compute hash dynamically from input_sequence."""
+        """Compute hash from input_sequence."""
         return hash(tuple(input_sequence))
 
     def _death(self, state):
@@ -56,11 +56,9 @@ class GamePath(msgspec.Struct):
         return state.player.dead
 
     def _score(self, state):
-        """Score the path based on the player's position, level number, and time.
+        """Score the path based on level, position, and time.
 
-        Prefers paths that reach higher positions in shorter time.
-        Time is calculated from input sequence length divided by fps.
-        Score format: level(xxx)-position(xxxxx)-time(xxx)
+        Prefers higher level > further right > shorter time.
         """
         if state.player is None:
             return 0
@@ -103,14 +101,14 @@ class GamePaths(msgspec.Struct):
     paths: list[GamePath] = []
 
     def backtrack_path(self, path: GamePath, backtrack_frames: int = None):
-        """Backtrack the path if the score before the dead state is higher than the best path.
+        """Remove the last N frames from a path.
 
         Args:
-            path: The GamePath object to potentially backtrack
-            backtrack_frames: Number of frames to backtrack, default is 60
+            path: The GamePath to backtrack
+            backtrack_frames: Number of frames to remove (default: 60)
 
         Returns:
-            GamePath or None: Backtracked path if backtracking was performed, None otherwise
+            GamePath or None: Backtracked path, or None if path is too short
         """
 
         if backtrack_frames is None:
@@ -131,14 +129,14 @@ class GamePaths(msgspec.Struct):
         )
 
     def split_path(self, path: GamePath, backtrack_frames: int = None):
-        """Split the path into two parts if in the middle of the path the score is higher than the best.
+        """Extract the highest-scoring intermediate state from a path.
 
         Args:
-            path: The GamePath object to potentially split
-            paths: The GamePaths context containing all stored paths
+            path: The GamePath to split
+            backtrack_frames: Number of frames to backtrack before searching
 
         Returns:
-            GamePath or None: Split path if splitting was performed, None otherwise
+            GamePath or None: Path up to best intermediate score, or None
         """
         if not self.paths:
             return None
@@ -161,7 +159,7 @@ class GamePaths(msgspec.Struct):
         return None
 
     def add(self, path: GamePath):
-        """Add a path to the paths list."""
+        """Add a path to the population, attempting to split it first."""
         if path in self.paths:
             note(f"Path already exists for score: {path.scores[-1]}")
             return
@@ -198,23 +196,20 @@ class GamePaths(msgspec.Struct):
             f.write(msgspec.json.encode(self))
 
     def sort(self) -> None:
-        """Sort the paths based on the score. Highest score first."""
+        """Sort paths by score, highest first."""
         self.paths.sort(key=lambda x: x.scores[-1], reverse=True)
 
     def delete(self, path: GamePath) -> None:
-        """Delete a path from the paths list."""
+        """Remove a path from the population."""
         if path in self.paths:
             note(f"Deleting path with score: {path.scores[-1]}")
             self.paths.remove(path)
 
     def clean(self, score_threshold_px: int = 100) -> None:
-        """Clean the paths list by collapsing paths with similar max scores.
-
-        Paths whose max scores are within the threshold are considered similar,
-        and only the highest scoring path from each group is kept.
+        """Remove redundant paths with similar scores.
 
         Args:
-            score_threshold_px: Position difference threshold in pixels for grouping similar paths (default: 100)
+            score_threshold_px: Position threshold in pixels (default: 100)
         """
         score_threshold = score_threshold_px * 1000  # pixels * time_score
 
@@ -244,10 +239,9 @@ class GamePaths(msgspec.Struct):
         note(f"Paths after cleaning: {len(self.paths)}")
 
     def select(self, best_path=False) -> Path:
-        """Select a path from the paths list based on the score using exponential weighting.
+        """Select a path using exponential weighting.
 
-        The best path (highest score) is selected ~70% of the time, with remaining probability
-        distributed among other paths using exponential weighting.
+        Best path selected ~70% of the time, others exponentially weighted.
         """
         if current().context.always_pick_best_path:
             best_path = True
@@ -288,11 +282,11 @@ class GamePaths(msgspec.Struct):
             total_exp_weight = sum(exp_weights)
             normalized_exp_weights = [w / total_exp_weight for w in exp_weights]
 
-            # Combine: best path gets 70% + its share of remaining 30%
+            # Combine: best path gets 50% base + its share of remaining 50%
             weights = [
                 best_weight + (1 - best_weight) * w for w in normalized_exp_weights
             ]
-            # Adjust all other paths to only get their share of remaining 30%
+            # Adjust all other paths to only get their share of remaining 50%
             weights[0] = best_weight + (1 - best_weight) * normalized_exp_weights[0]
             for i in range(1, len(weights)):
                 weights[i] = (1 - best_weight) * normalized_exp_weights[i]
@@ -307,7 +301,7 @@ class GamePaths(msgspec.Struct):
 
 @TestStep(Given)
 def load(self, filename):
-    """Load paths from a JSON file."""
+    """Load paths from file."""
     # On first iteration, load existing paths if requested
 
     if not os.path.exists(filename):
@@ -320,5 +314,5 @@ def load(self, filename):
 
 @TestStep(Finally)
 def save(self, filename):
-    """Save paths to a JSON file."""
+    """Save paths to file."""
     self.context.paths.save(filename=filename)

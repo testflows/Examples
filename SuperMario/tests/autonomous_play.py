@@ -8,28 +8,20 @@ import actions.moves as moves
 import actions.paths as paths
 
 
-def select_weighted_move():
-    """Select a move with weighted probabilities:
-    - fuzzy gets 40% weight (for exploration)
-    - right moves get 2x weight over left moves
-    - other moves get normal weight
-    """
+def select_weighted_move(weights=None):
+    """Select a move with weighted probabilities."""
     move_weights = []
     move_functions = []
 
+    if weights is None:
+        weights = {
+            "fuzzy": 10.0,
+            "right": 2.0,
+            "left": 0.5,
+        }
+
     for move in moves.all_moves:
-        weight = 1.0
-        move_name = move.__name__
-
-        # Give fuzzy much higher weight for exploration
-        if move_name == "fuzzy":
-            weight = 5.0
-        # Prefer right moves over left moves
-        elif "right" in move_name:
-            weight = 5.0
-        elif "left" in move_name:
-            weight = 0.5
-
+        weight = weights.get(move.__name__, 1.0)
         move_weights.append(weight)
         move_functions.append(move)
 
@@ -37,12 +29,12 @@ def select_weighted_move():
 
 
 @TestScenario
-def play(self, path, play_seconds=1, with_model=False):
+def play(self, path, stop_index=None, play_seconds=1, with_model=False):
     """Allow autonomous play of the game for a specified duration
     with behavior model validation."""
 
     with Given("start the game"):
-        self.context.game = actions.start(quit=False, fps=60 * 5)
+        self.context.game = actions.start(quit=False)
 
     game = self.context.game
 
@@ -65,10 +57,24 @@ def play(self, path, play_seconds=1, with_model=False):
         else:
             new_path += move()
 
-    for input in path.input_sequence:
+    sequence_length = len(path.input_sequence)
+
+    # If playing the best path, stop at the end of the path
+    if self.context.always_pick_full_path or stop_index is None:
+        stop_index = sequence_length + 1
+
+    note(f"Playing {stop_index - 1} of {sequence_length} frames from path")
+
+    # Skip index 0 (the old dummy frame) since game_path already has a new dummy
+    for i, input in enumerate(path.input_sequence[1:stop_index], start=1):
         actions.press_keys(game, input)
         actions.play(game, frames=1, model=model)
         game_path.append(input, game.behavior[-1])
+        if game_path.scores[-1] != path.scores[i]:
+            note(
+                f"Replay score mismatch on frame {i}: {game_path.scores[-1]} != {path.scores[i]}"
+            )
+            raise RuntimeError("Replay score mismatch")
         if game_path.deaths[-1]:
             self.context.paths.delete(path)
             return
@@ -87,7 +93,7 @@ def play(self, path, play_seconds=1, with_model=False):
 def scenario(
     self,
     play_seconds,
-    interval=30,
+    interval=20,
     tries=3,
     save_paths=True,
     load_paths=True,
@@ -116,7 +122,13 @@ def scenario(
     for part in range(play_seconds // interval):
         for i in range(tries):
             with Scenario(f"interval {part}-{i}"):
-                play(path=path, play_seconds=interval, with_model=with_model)
+                stop_index = path.select_stop_index()
+                play(
+                    path=path,
+                    play_seconds=interval,
+                    with_model=with_model,
+                    stop_index=stop_index,
+                )
 
             if path not in self.context.paths.paths:
                 # If the path is no longer in the paths list
@@ -124,6 +136,7 @@ def scenario(
                 break
 
         # Select the next path
+        self.context.paths.clean()
         path = self.context.paths.select()
 
         # Save all paths to file if requested

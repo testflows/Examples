@@ -7,14 +7,15 @@ from .. import constants as c
 from .. components import info
 
 class Menu(tools.State):
-    def __init__(self):
+    def __init__(self, start_level=1):
         tools.State.__init__(self)
+        self.start_level = start_level
         persist = {c.COIN_TOTAL: 0,
                    c.SCORE: 0,
                    c.LIVES: 3,
                    c.TOP_SCORE: 0,
                    c.CURRENT_TIME: 0.0,
-                   c.LEVEL_NUM: 1,
+                   c.LEVEL_NUM: self.start_level,
                    c.PLAYER_NAME: c.PLAYER_MARIO}
         self.startup(0.0, persist)
     
@@ -29,7 +30,7 @@ class Menu(tools.State):
         self.setup_cursor()
         
     def setup_background(self):
-        self.background = setup.GFX['level_1']
+        self.background = setup.GFX[f'level_{self.start_level}']
         self.background_rect = self.background.get_rect()
         self.background = pg.transform.scale(self.background,
                                     (int(self.background_rect.width*c.BACKGROUND_MULTIPLER),
@@ -99,6 +100,6 @@ class Menu(tools.State):
         self.game_info[c.SCORE] = 0
         self.game_info[c.LIVES] = 3
         self.game_info[c.CURRENT_TIME] = 0.0
-        self.game_info[c.LEVEL_NUM] = 1
+        self.game_info[c.LEVEL_NUM] = self.start_level
         
         self.persist = self.game_info

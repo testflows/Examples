@@ -552,6 +552,9 @@ class Level(tools.State):
     def update_game_info(self):
         if self.player.dead:
             self.persist[c.LIVES] -= 1
+            self.persist[c.LEVEL_COMPLETED] = False
+        else:
+            self.persist[c.LEVEL_COMPLETED] = True
 
         if self.persist[c.LIVES] == 0:
             self.next = c.GAME_OVER
@@ -560,7 +563,8 @@ class Level(tools.State):
         elif self.player.dead:
             self.next = c.LOAD_SCREEN
         else:
-            self.game_info[c.LEVEL_NUM] += 1
+            # Don't increment level here - let LoadScreen do it during transition
+            # This prevents state with new level_num with old player position from being captured
             self.next = c.LOAD_SCREEN
 
     def update_viewport(self):

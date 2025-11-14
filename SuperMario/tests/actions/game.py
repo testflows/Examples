@@ -106,7 +106,9 @@ class BehaviorState:
         self.boxes = boxes
         self.frame = None
         if current().context.video_writer:
-            frame = np.rot90(frame, k=-1)  # Rotate 270° counter-clockwise (90° clockwise)
+            frame = np.rot90(
+                frame, k=-1
+            )  # Rotate 270° counter-clockwise (90° clockwise)
             frame = np.fliplr(frame)  # Flip horizontally
             current().context.video_writer.append_data(frame)
         self.player = None

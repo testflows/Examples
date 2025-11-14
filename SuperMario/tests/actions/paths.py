@@ -15,6 +15,7 @@ class GamePath(msgspec.Struct):
 
     input_sequence: list[actions.PressedKeys] = []
     scores: list[int] = []
+    ticks: list[int] = []
     hashes: list[int] = []
     deaths: list[bool] = []
 
@@ -29,6 +30,8 @@ class GamePath(msgspec.Struct):
             self.hashes = [0]
         if not self.deaths:
             self.deaths = [False]
+        if not self.ticks:
+            self.ticks = [0]
 
     def __eq__(self, other):
         """Check if two paths are equal."""
@@ -39,9 +42,10 @@ class GamePath(msgspec.Struct):
         self.scores.append(self._score(state))
         self.hashes.append(self._hash(self.input_sequence))
         self.deaths.append(self._death(state))
+        self.ticks.append(state.current_time)
 
     def _hash(self, input_sequence):
-        """Compute hash dynamically from input_sequence."""
+        """Compute hash from input_sequence."""
         return hash(tuple(input_sequence))
 
     def _death(self, state):
@@ -64,9 +68,11 @@ class GamePath(msgspec.Struct):
         # Get level number, default to 1 if not available
         level_num = state.level_num if state.level_num is not None else 1
 
-        # Calculate time in seconds from input sequence length
+        # Calculate time in seconds based on path frame count, not absolute game time
+        # This ensures deterministic scoring regardless of game startup timing
         fps = current().context.fps
-        time_in_seconds = len(self.input_sequence) // fps
+        # Subtract 1 to exclude the initial dummy frame added by __post_init__
+        time_in_seconds = (len(self.input_sequence) - 1) // fps
 
         # Score structure using powers of 10:
         # level (3 digits) * 10^9 = xxx_000_000_000
@@ -79,6 +85,19 @@ class GamePath(msgspec.Struct):
 
         return level_score + position_score + time_score
 
+    def select_stop_index(self, weights=None):
+        """Select a stop index for the path based on triangular distribution."""
+        if weights is None:
+            weights = {
+                "low": 0.6,
+                "high": 1.0,
+                "mode": 0.98,
+            }
+
+        sequence_length = len(self.input_sequence)
+        stop_fraction = random.triangular(**weights)
+        return max(1, min(sequence_length, round(stop_fraction * sequence_length)))
+
 
 class GamePaths(msgspec.Struct):
     paths: list[GamePath] = []
@@ -87,33 +106,39 @@ class GamePaths(msgspec.Struct):
         """Backtrack the path if the score before the dead state is higher than the best path.
 
         Args:
-            path: The GamePath object to potentially backtrack
-            backtrack_frames: Number of frames to backtrack, default is 60
+            path: The GamePath to backtrack
+            backtrack_frames: Number of frames to remove (default: 60)
 
         Returns:
-            GamePath or None: Backtracked path if backtracking was performed, None otherwise
+            GamePath or None: Backtracked path, or None if path is too short
         """
+
         if backtrack_frames is None:
-            backtrack_frames = current().context.fps * 1
+            backtrack_frames = current().context.backtrack
 
         if len(path.input_sequence) < (backtrack_frames + 1):
             return None
 
+        note(
+            f"Backtracking {backtrack_frames} frames for path with score: {path.scores[-1]}"
+        )
+
         return GamePath(
-            input_sequence=path.input_sequence[:-backtrack_frames],
-            scores=path.scores[:-backtrack_frames],
-            hashes=path.hashes[:-backtrack_frames],
+            input_sequence=path.input_sequence[: -(backtrack_frames + 1)],
+            scores=path.scores[: -(backtrack_frames + 1)],
+            hashes=path.hashes[: -(backtrack_frames + 1)],
+            ticks=path.ticks[: -(backtrack_frames + 1)],
         )
 
     def split_path(self, path: GamePath, backtrack_frames: int = None):
         """Split the path into two parts if in the middle of the path the score is higher than the best.
 
         Args:
-            path: The GamePath object to potentially split
-            paths: The GamePaths context containing all stored paths
+            path: The GamePath to split
+            backtrack_frames: Number of frames to backtrack before searching
 
         Returns:
-            GamePath or None: Split path if splitting was performed, None otherwise
+            GamePath or None: Path up to best intermediate score, or None
         """
         if not self.paths:
             return None
@@ -131,11 +156,12 @@ class GamePaths(msgspec.Struct):
                 input_sequence=backtracked_path.input_sequence[:split_index],
                 scores=backtracked_path.scores[:split_index],
                 hashes=backtracked_path.hashes[:split_index],
+                ticks=backtracked_path.ticks[:split_index],
             )
         return None
 
     def add(self, path: GamePath):
-        """Add a path to the paths list."""
+        """Add a path to the population, attempting to split it first."""
         if path in self.paths:
             note(f"Path already exists for score: {path.scores[-1]}")
             return
@@ -172,11 +198,11 @@ class GamePaths(msgspec.Struct):
             f.write(msgspec.json.encode(self))
 
     def sort(self) -> None:
-        """Sort the paths based on the score. Highest score first."""
+        """Sort paths by score, highest first."""
         self.paths.sort(key=lambda x: x.scores[-1], reverse=True)
 
     def delete(self, path: GamePath) -> None:
-        """Delete a path from the paths list."""
+        """Remove a path from the population."""
         if path in self.paths:
             note(f"Deleting path with score: {path.scores[-1]}")
             self.paths.remove(path)
@@ -223,17 +249,20 @@ class GamePaths(msgspec.Struct):
         The best path (highest score) is selected ~70% of the time, with remaining probability
         distributed among other paths using exponential weighting.
         """
+        if current().context.always_pick_best_path:
+            best_path = True
+
         # Sort paths by score (best first)
         self.sort()
-
-        if best_path:
-            return self.paths[0]
 
         scores = [path.scores[-1] for path in self.paths]
 
         # Display all scores
         note(f"All end scores: {scores}")
         note(f"Best end score: {scores[0]}")
+
+        if best_path:
+            return self.paths[0]
 
         # Use aggressive selection: ~70% for best path, rest distributed exponentially
         min_score = min(scores)
@@ -278,7 +307,7 @@ class GamePaths(msgspec.Struct):
 
 @TestStep(Given)
 def load(self, filename):
-    """Load paths from a JSON file."""
+    """Load paths from file."""
     # On first iteration, load existing paths if requested
 
     if not os.path.exists(filename):
@@ -291,5 +320,5 @@ def load(self, filename):
 
 @TestStep(Finally)
 def save(self, filename):
-    """Save paths to a JSON file."""
+    """Save paths to file."""
     self.context.paths.save(filename=filename)

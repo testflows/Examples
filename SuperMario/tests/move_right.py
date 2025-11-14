@@ -16,7 +16,7 @@ def scenario(self):
         mario_start = actions.get_element(game, "player")
 
     with When("press the right key for 1 second"):
-        with actions.press_right():
+        with actions.press_right(game):
             actions.play(game, seconds=1)
 
     with And("get Mario's end position"):

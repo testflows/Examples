@@ -79,6 +79,39 @@ def argparser(parser):
         help="play the best path (default: False)",
     )
 
+    parser.add_argument(
+        "--always-pick-full-path",
+        action="store_true",
+        help="always pick the full path (default: False)",
+    )
+
+    parser.add_argument(
+        "--always-pick-best-path",
+        action="store_true",
+        help="always pick the best path (default: False)",
+    )
+
+    parser.add_argument(
+        "--interval",
+        type=int,
+        default=20,
+        help="interval for autonomous play in seconds (default: 20)",
+    )
+
+    parser.add_argument(
+        "--tries",
+        type=int,
+        default=3,
+        help="number of tries for autonomous play (default: 3)",
+    )
+
+    parser.add_argument(
+        "--backtrack",
+        type=int,
+        default=None,
+        help="number of frames to backtrack (default: None)",
+    )
+
 
 @TestModule
 @Name("super mario")
@@ -96,13 +129,30 @@ def module(
     load_paths=False,
     save_paths=False,
     play_best_path=False,
+    always_pick_full_path=False,
+    always_pick_best_path=False,
+    interval=20,
+    tries=3,
+    backtrack=None,
 ):
     """Run tests for the Super Mario Bros. game."""
+
+    if play_best_path:
+        play_seconds = 1
+        interval = 1
+        tries = 1
+        save_paths = False
+        always_pick_full_path = True
+        always_pick_best_path = True
 
     self.context.fps = fps
     self.context.start_level = start_level
     self.context.save_video = save_video
+    self.context.video_writer = None
     self.context.model = None
+    self.context.always_pick_full_path = always_pick_full_path
+    self.context.always_pick_best_path = always_pick_best_path
+    self.context.backtrack = backtrack if backtrack is not None else fps * 1
 
     if not autonomous:
         with Given("start the game"):
@@ -126,7 +176,8 @@ def module(
                 paths_file=paths_file,
                 load_paths=load_paths,
                 save_paths=save_paths,
-                play_best_path=play_best_path,
+                interval=interval,
+                tries=tries,
             )
 
     elif with_model:

@@ -1,13 +1,13 @@
 import msgspec
 import pygame as pg
+import imageio.v2 as imageio
+import numpy as np
 
 from copy import deepcopy
 from contextlib import contextmanager
 from source import tools
 from source import constants as c
 from source.states import main_menu, load_screen, level
-from PIL import Image
-
 
 from testflows.core import *
 from .vision import Vision
@@ -105,8 +105,10 @@ class BehaviorState:
         self.keys = deepcopy(keys)
         self.boxes = boxes
         self.frame = None
-        if current().context.save_video:
-            self.frame = frame
+        if current().context.video_writer:
+            frame = np.rot90(frame, k=-1)  # Rotate 270° counter-clockwise (90° clockwise)
+            frame = np.fliplr(frame)  # Flip horizontally
+            current().context.video_writer.append_data(frame)
         self.player = None
         self.level_num = None
         self.start_x = None
@@ -144,29 +146,27 @@ class Control(tools.Control):
         self.behavior = []
         self.play = None
         self.manual = False
+        self.ticks = 0
+
+    def update(self):
+        self.current_time = self.ticks * 1000 // self.fps
+        if self.state.done:
+            self.flip_state()
+        self.state.update(self.screen, self.keys, self.current_time)
 
     def event_loop(self):
-        for event in pg.event.get():
-            if event.type == pg.QUIT:
-                self.done = True
-            elif event.type == pg.KEYDOWN:
-                if self.manual:
-                    pressed = pg.key.get_pressed()
-                    for code in all_key_codes:
-                        if pressed[code]:
-                            self.keys[code] = True
-                else:
-                    if hasattr(event, "key"):
-                        self.keys[event.key] = True
-            elif event.type == pg.KEYUP:
-                if self.manual:
-                    pressed = pg.key.get_pressed()
-                    for code in all_key_codes:
-                        if code in self.keys and not pressed[code]:
-                            del self.keys[code]
-                else:
-                    if hasattr(event, "key") and event.key in self.keys:
-                        del self.keys[event.key]
+        if self.manual:
+            for event in pg.event.get():
+                if event.type == pg.QUIT:
+                    self.done = True
+                elif event.type == pg.KEYDOWN:
+                    self.keys = pg.key.get_pressed()
+                elif event.type == pg.KEYUP:
+                    self.keys = pg.key.get_pressed()
+        else:
+            # In automated mode, clear event queue without processing
+            # This prevents stray events from affecting deterministic execution
+            pg.event.clear()
 
     def main(self):
         """Main game loop."""
@@ -189,18 +189,17 @@ class Control(tools.Control):
                 yield self
                 pg.display.update()
                 self.clock.tick(self.fps)
+                self.ticks += 1
 
         self.play = _main()
 
 
 @contextmanager
-def simulate_keypress(key):
-    """Simulate a key press and release event for the given key."""
-    keydown_event = pg.event.Event(pg.KEYDOWN, key=key)
-    pg.event.post(keydown_event)
+def simulate_keypress(game, key):
+    """Simulate a key press and release."""
+    game.keys[key] = True
     yield
-    keyup_event = pg.event.Event(pg.KEYUP, key=key)
-    pg.event.post(keyup_event)
+    del game.keys[key]
 
 
 def is_key_pressed(game, key):
@@ -209,7 +208,7 @@ def is_key_pressed(game, key):
 
 
 def get_pressed_keys(game):
-    """Extract pressed keys from behavior state."""
+    """Extract currently pressed keys from game."""
 
     return PressedKeys(
         right=is_key_pressed(game, "right"),
@@ -222,7 +221,7 @@ def get_pressed_keys(game):
 
 
 def press_keys(game, press: PressedKeys, pressed_keys: PressedKeys = None):
-    """Press keys for a given number of frames using msgspec.Struct."""
+    """Update which keys are currently pressed."""
     if pressed_keys is None:
         pressed_keys = get_pressed_keys(game)
 
@@ -230,43 +229,43 @@ def press_keys(game, press: PressedKeys, pressed_keys: PressedKeys = None):
         pressed = getattr(press, key_name)
         current = getattr(pressed_keys, key_name)
         if pressed and not current:
-            pg.event.post(pg.event.Event(pg.KEYDOWN, key=keys[key_name]))
+            game.keys[keys[key_name]] = True
         elif not pressed and current:
-            pg.event.post(pg.event.Event(pg.KEYUP, key=keys[key_name]))
+            del game.keys[keys[key_name]]
 
 
-def press_enter():
+def press_enter(game):
     """Press the enter key."""
-    return simulate_keypress(key=keys["enter"])
+    return simulate_keypress(game, key=keys["enter"])
 
 
-def press_right():
+def press_right(game):
     """Press the right arrow key."""
-    return simulate_keypress(key=keys["right"])
+    return simulate_keypress(game, key=keys["right"])
 
 
-def press_left():
+def press_left(game):
     """Press the left arrow key."""
-    return simulate_keypress(key=keys["left"])
+    return simulate_keypress(game, key=keys["left"])
 
 
-def press_down():
+def press_down(game):
     """Press the down arrow key."""
-    return simulate_keypress(key=keys["down"])
+    return simulate_keypress(game, key=keys["down"])
 
 
-def press_jump():
+def press_jump(game):
     """Press the jump key."""
-    return simulate_keypress(key=keys["jump"])
+    return simulate_keypress(game, key=keys["jump"])
 
 
-def press_action():
+def press_action(game):
     """Press the action key."""
-    return simulate_keypress(keys["action"])
+    return simulate_keypress(game, keys["action"])
 
 
 def play(game, seconds=1, frames=None, model=None):
-    """Play the game for the specified number seconds or frames."""
+    """Play the game for the specified number of seconds or frames."""
     if frames is None:
         frames = int(seconds * game.fps)
 
@@ -293,16 +292,13 @@ def overlay(game, elements, color=Vision.color["red"]):
     game.behavior[-1].frame = pg.surfarray.array3d(game.screen)
 
 
-def save_video(game, path="output.gif", start=0):
-    """Save the video of the game's behavior."""
-    frames = []
-    for state in game.behavior[start:]:
-        image = Image.fromarray(state.frame)
-        image = image.transpose(Image.Transpose.ROTATE_270)
-        image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-        frames.append(image)
-    frames += [frames[-1]] * 30  # add a delay at the end of the video
-    frames[0].save(path, save_all=True, append_images=frames[1:], duration=33, loop=0)
+def save_video2(game, path="output.gif", start=0):
+    with imageio.get_writer(path, mode="I", duration=1 / 30) as writer:
+        for state in game.behavior[start:]:
+            writer.append_data(state.frame)
+
+        for _ in range(30):  # freeze last frame
+            writer.append_data(state.frame)
 
 
 @TestStep(When)
@@ -310,11 +306,12 @@ def wait_ready(self, game, seconds=3):
     """Wait for game to be loaded and ready."""
     next(game.play)
 
-    with press_enter():
+    with press_enter(game):
         next(game.play)
 
     for _ in range(seconds * game.fps):
         next(game.play)
+    note(f"Game ready after { game.ticks } ticks")
 
 
 @TestStep(Given)
@@ -325,7 +322,7 @@ def start(self, ready=True, quit=True, fps=None, start_level=None):
         ready: Wait for game to be ready before yielding
         quit: Quit pygame when done
         fps: Frames per second
-        initial_level: Starting level number (default: None, uses level 1)
+        start_level: Starting level number (default: None, uses level 1)
     """
     if fps is None:
         fps = self.context.fps
@@ -361,6 +358,15 @@ def setup(self, game, overlays=None):
     overlays = overlays or []
     base_frame = len(game.behavior)
     try:
+        if current().context.save_video:
+            path = f"{name.basename(self.parent.name).replace(' ', '_')}.mp4"
+            current().context.video_writer = imageio.get_writer(
+                path,
+                fps=game.fps,
+                codec="libx264",
+                quality=8,
+                macro_block_size=1,
+            ).__enter__()
         yield
     finally:
         if overlays:
@@ -376,11 +382,5 @@ def setup(self, game, overlays=None):
                         for name, offset in overlays
                     ],
                 )
-
-        if self.context.save_video:
-            with By("saving video"):
-                save_video(
-                    game,
-                    path=f"{name.basename(self.parent.name).replace(' ', '_')}.gif",
-                    start=base_frame,
-                )
+        if current().context.save_video:
+            current().context.video_writer.__exit__(None, None, None)

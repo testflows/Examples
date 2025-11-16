@@ -65,26 +65,33 @@ def play(self, path, stop_index=None, play_seconds=1, with_model=False):
 
     note(f"Playing {stop_index - 1} of {sequence_length} frames from path")
 
-    # Skip index 0 (the old dummy frame) since game_path already has a new dummy
-    for i, input in enumerate(path.input_sequence[1:stop_index], start=1):
-        actions.press_keys(game, input)
-        actions.play(game, frames=1, model=model)
-        game_path.append(input, game.behavior[-1])
-        if game_path.scores[-1] != path.scores[i]:
-            note(
-                f"Replay score mismatch on frame {i}: {game_path.scores[-1]} != {path.scores[i]}"
-            )
-            raise RuntimeError("Replay score mismatch")
-        if game_path.deaths[-1]:
-            self.context.paths.delete(path)
-            return
+    try:
+        # Skip index 0 (the old dummy frame) since game_path already has a new dummy
+        for i, input in enumerate(path.input_sequence[1:stop_index], start=1):
+            actions.press_keys(game, input)
+            actions.play(game, frames=1, model=model)
+            game_path.append(input, game.behavior[-1])
+            if game_path.scores[-1] != path.scores[i]:
+                note(
+                    f"Replay score mismatch on frame {i}: {game_path.scores[-1]} != {path.scores[i]}"
+                )
+                raise RuntimeError("Replay score mismatch")
+            if game_path.deaths[-1]:
+                self.context.paths.delete(path)
+                return
 
-    for input in new_path[:length]:
-        actions.press_keys(game, input)
-        actions.play(game, frames=1, model=model)
+        for input in new_path[:length]:
+            actions.press_keys(game, input)
+            actions.play(game, frames=1, model=model)
+            game_path.append(input, game.behavior[-1])
+            if game_path.deaths[-1]:
+                break
+    except AssertionError as e:
         game_path.append(input, game.behavior[-1])
-        if game_path.deaths[-1]:
-            break
+        # model failed to predict the behavior, so we stop playing
+        note(f"Model assertion failed - saving failed path to file")
+        paths.GamePaths(paths=[game_path]).save(filename="failed_path.json")
+        raise
 
     self.context.paths.add(game_path)
 

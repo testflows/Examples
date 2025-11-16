@@ -132,7 +132,7 @@ class BehaviorState:
             self.end_x = state.end_x
 
     def __str__(self):
-        return f"BehaviorState(level_num={self.level_num}, keys={self.keys}, player={self.player}, ...)"
+        return f"BehaviorState(level_num={self.level_num}, keys={self.keys}, boxes={self.boxes}, player={self.player}, start_x={self.start_x}, end_x={self.end_x}, current_time={self.current_time})"
 
     def __repr__(self):
         return str(self)

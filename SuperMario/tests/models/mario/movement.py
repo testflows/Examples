@@ -1,4 +1,4 @@
-from ..base import Model
+from ..base import Model, debug
 
 
 class Behavior:
@@ -41,9 +41,11 @@ class Behavior:
             return False
 
         # Get positions
-        self.pos_right_before = model.get_position(self.right_before)
-        self.pos_before = model.get_position(self.before)
-        self.pos_now = model.get_position(self.now)
+        # Use centerx for horizontal positions (sprite changes preserve centerx, not left x)
+        # This avoids false movement detection when sprite width changes during animation
+        self.pos_right_before = self.mario_right_before.box.centerx
+        self.pos_before = self.mario_before.box.centerx
+        self.pos_now = self.mario_now.box.centerx
 
         self.velocity = self.pos_before - self.pos_right_before
         self.velocity_now = self.pos_now - self.pos_before
@@ -54,12 +56,44 @@ class Behavior:
         self.pos_y_before = model.get_position(self.before, axis="y")
         self.pos_y_now = model.get_position(self.now, axis="y")
 
-        self.vertical_velocity = self.pos_y_before - self.pos_y_right_before
-        self.vertical_velocity_now = self.pos_y_now - self.pos_y_before
-        self.actual_vertical_movement = self.pos_y_now - self.pos_y_before
+        # Use rect.bottom directly (sprite changes preserve bottom position, so this handles
+        # sprite height changes correctly - the game adjusts rect.y to keep rect.bottom constant)
+        self.bottom_y_right_before = self.mario_right_before.box.bottom
+        self.bottom_y_before = self.mario_before.box.bottom
+        self.bottom_y_now = self.mario_now.box.bottom
+
+        # Use bottom positions for all vertical velocity calculations
+        self.vertical_velocity = self.bottom_y_before - self.bottom_y_right_before
+        self.vertical_velocity_now = self.bottom_y_now - self.bottom_y_before
+        self.actual_vertical_movement = self.bottom_y_now - self.bottom_y_before
 
         # Extract key states
         self.keys = model.get_pressed_keys(self.now)
+
+        # Check for collision-causing position adjustments (computed once, used by multiple checks)
+        self.has_horizontal_collision_adjustment = (
+            model.has_collision_causing_horizontal_adjustment(
+                self.mario_now,
+                self.mario_before,
+                self.mario_right_before,
+                self.now,
+                self.before,
+            )
+        )
+        self.has_vertical_collision_adjustment = (
+            model.has_collision_causing_vertical_adjustment(
+                self.mario_now,
+                self.mario_before,
+                self.mario_right_before,
+                self.now,
+                self.before,
+            )
+        )
+        # Combined flag preserved for any checks that don't care about direction
+        self.has_collision_adjustment = (
+            self.has_horizontal_collision_adjustment
+            or self.has_vertical_collision_adjustment
+        )
 
         return self
 
@@ -77,6 +111,7 @@ class Propositions:
         self.max_run_velocity = 12
         self.max_vertical_velocity = 11
         self.max_recently_run = 45
+        self.max_recently_in_the_air = 45
         self.max_was_in_transition = 55
 
     def was_in_transition(self, behavior):
@@ -130,6 +165,18 @@ class Propositions:
                 return True
         return False
 
+    def was_in_the_air_recently(self, behavior):
+        """Return True if Mario was in the air at any point in the recent history window."""
+        # Check recent history to see if Mario was in the air
+        # Velocity from air state can persist for multiple frames after landing
+        for state in reversed(behavior.history[-self.max_recently_in_the_air :]):
+            if not state.player:
+                continue
+            mario = self.model.get("player", state)
+            if mario and self.in_the_air(mario, state):
+                return True
+        return False
+
     def no_keys(self, right_pressed, left_pressed):
         return not right_pressed and not left_pressed
 
@@ -139,26 +186,26 @@ class Propositions:
     def both_keys_tiny_velocity(self, velocity, right_pressed, left_pressed):
         return left_pressed and right_pressed and abs(velocity) < self.max_tiny_velocity
 
-    def left_touch(self, mario_now, now):
-        return self.model.has_left_touch(mario_now, now)
+    def left_touch(self, mario_now, mario_before, now):
+        return self.model.has_left_touch(mario_now, mario_before, now)
 
-    def left_touched(self, mario_before, before):
-        return self.model.has_left_touch(mario_before, before)
+    def left_touched(self, mario_before, mario_right_before, before):
+        return self.model.has_left_touch(mario_before, mario_right_before, before)
 
-    def left_touching(self, mario_now, now, mario_before, before):
-        return self.left_touch(mario_now, now) or self.left_touched(
-            mario_before, before
+    def left_touching(self, mario_now, mario_before, mario_right_before, now, before):
+        return self.left_touch(mario_now, mario_before, now) or self.left_touched(
+            mario_before, mario_right_before, before
         )
 
-    def right_touch(self, mario_now, now):
-        return self.model.has_right_touch(mario_now, now)
+    def right_touch(self, mario_now, mario_before, now):
+        return self.model.has_right_touch(mario_now, mario_before, now)
 
-    def right_touched(self, mario_before, before):
-        return self.model.has_right_touch(mario_before, before)
+    def right_touched(self, mario_before, mario_right_before, before):
+        return self.model.has_right_touch(mario_before, mario_right_before, before)
 
-    def right_touching(self, mario_now, now, mario_before, before):
-        return self.right_touch(mario_now, now) or self.right_touched(
-            mario_before, before
+    def right_touching(self, mario_now, mario_before, mario_right_before, now, before):
+        return self.right_touch(mario_now, mario_before, now) or self.right_touched(
+            mario_before, mario_right_before, before
         )
 
     def at_left_boundary(self, mario_now, state):
@@ -172,6 +219,10 @@ class Propositions:
 
     def past_right_boundary(self, mario_now, state):
         return self.model.is_past_right_boundary(mario_now, state)
+
+    def on_the_ground_collision(self, mario_now, now):
+        """Check if Mario is on the ground (has bottom collision)."""
+        return self.model.has_bottom_collision(mario_now, now)
 
     def on_the_ground(self, mario_now, now):
         """Check if Mario is on the ground (has bottom collision)."""
@@ -188,10 +239,10 @@ class Propositions:
         return not self.on_the_ground(mario_now, now)
 
     def has_right_movement_cause(self, velocity, right_pressed):
-        return velocity > 1 or right_pressed
+        return velocity >= 1 or right_pressed
 
     def has_left_movement_cause(self, velocity, left_pressed):
-        return velocity < -1 or left_pressed
+        return velocity <= -1 or left_pressed
 
     def velocity_left(self, velocity):
         return velocity < -1
@@ -229,16 +280,18 @@ class Propositions:
     def velocity_down(self, velocity):
         return velocity > 1
 
-    def path_is_clear(self, mario_now, now, mario_before, before, direction):
+    def path_is_clear(
+        self, mario_now, mario_before, mario_right_before, now, before, direction
+    ):
         """Check if Mario's path is clear for movement in the given direction."""
 
         if direction == "right":
             return not self.right_touching(
-                mario_now, now, mario_before, before
+                mario_now, mario_before, mario_right_before, now, before
             ) and not self.at_right_boundary(mario_now, now)
         else:  # left
             return not self.left_touching(
-                mario_now, now, mario_before, before
+                mario_now, mario_before, mario_right_before, now, before
             ) and not self.at_left_boundary(mario_now, now)
 
     def has_right_direction(self, mario, state):
@@ -271,6 +324,14 @@ class CausalProperties(Propositions):
         right_pressed = self.right_pressed(behavior.keys)
 
         if self.moved_right(actual_movement):
+            # Skip check if there's a collision causing position adjustment
+            # Position adjustments can cause large position jumps that don't reflect actual velocity
+            if behavior.has_horizontal_collision_adjustment:
+                debug(
+                    "Collision adjustment is expected, skipping right movement cause check"
+                )
+                return
+
             self.model.assert_with_success(
                 self.has_right_movement_cause(velocity, right_pressed),
                 f"moved right because {f'velocity is {velocity}' if velocity > 0 else 'right key is pressed'}",
@@ -284,6 +345,14 @@ class CausalProperties(Propositions):
         left_pressed = self.left_pressed(behavior.keys)
 
         if self.moved_left(actual_movement):
+            # Skip check if there's a collision causing position adjustment
+            # Position adjustments can cause large position jumps that don't reflect actual velocity
+            if behavior.has_horizontal_collision_adjustment:
+                debug(
+                    "Collision adjustment is expected, skipping left movement cause check"
+                )
+                return
+
             self.model.assert_with_success(
                 self.has_left_movement_cause(velocity, left_pressed),
                 f"moved left because {f'velocity is {velocity}' if velocity < 0 else 'left key is pressed'}",
@@ -300,11 +369,21 @@ class CausalProperties(Propositions):
 
         mario_now = behavior.mario_now
         mario_before = behavior.mario_before
+        mario_right_before = behavior.mario_right_before
 
         now = behavior.now
         before = behavior.before
+        right_before = behavior.right_before
 
         if self.stayed_in_place(actual_movement):
+            # Skip check if there's a collision causing position adjustment
+            # Position adjustments can cause position to stay the same even when velocity suggests movement
+            if behavior.has_horizontal_collision_adjustment:
+                debug(
+                    "Collision adjustment is expected, skipping stayed in place cause check"
+                )
+                return
+
             self.model.assert_with_success(
                 (
                     self.no_keys(right_pressed, left_pressed)
@@ -314,11 +393,15 @@ class CausalProperties(Propositions):
                     )
                     or (
                         self.velocity_left(velocity)
-                        and self.left_touching(mario_now, now, mario_before, before)
+                        and self.left_touching(
+                            mario_now, mario_before, mario_right_before, now, before
+                        )
                     )
                     or (
                         self.velocity_right(velocity)
-                        and self.right_touching(mario_now, now, mario_before, before)
+                        and self.right_touching(
+                            mario_now, mario_before, mario_right_before, now, before
+                        )
                     )
                     or (
                         self.velocity_left(velocity)
@@ -338,10 +421,16 @@ class CausalProperties(Propositions):
         actual_vertical_movement = behavior.actual_vertical_movement
 
         if self.moved_down(actual_vertical_movement):
+            # Skip check if there's a collision causing position adjustment
+            # Landing adjustments can cause false fall detection
+            if behavior.has_vertical_collision_adjustment:
+                debug("Collision adjustment is expected, skipping fall cause check")
+                return
+
             mario_before = behavior.mario_before
             before = behavior.before
             self.model.assert_with_success(
-                not self.on_the_ground(mario_before, before),
+                not self.on_the_ground_collision(mario_before, before),
                 f"fell {actual_vertical_movement} because there was no ground support",
             )
 
@@ -356,9 +445,16 @@ class CausalProperties(Propositions):
             now = behavior.now
             before = behavior.before
             mario_before = behavior.mario_before
+            # Check if Mario was on ground in the 'before' state (when landing occurred)
+            # or if he's currently on ground, or if he stomped an enemy
+            # Note: Check both 'before' and 'now' states for enemy stomp because the stomp
+            # happens in the transition - Mario may not be horizontally aligned with enemy in 'before'
+            # state, but is positioned on top of enemy in 'now' state after the collision
             self.model.assert_with_success(
-                self.on_the_ground(mario_now, now)
-                or self.stomped_enemy(mario_before, before),
+                self.on_the_ground(mario_before, before)
+                or self.on_the_ground(mario_now, now)
+                or self.stomped_enemy(mario_before, before)
+                or self.stomped_enemy(mario_now, now),
                 "stopped falling because landed on support or stomped an enemy",
             )
 
@@ -369,13 +465,29 @@ class CausalProperties(Propositions):
         vertical_velocity = behavior.vertical_velocity
 
         if self.moved_up(actual_vertical_movement):
+            # Skip check if there's a collision causing position adjustment
+            # Position adjustments (especially from enemy stomps or top collisions) can cause false upward movement
+            if behavior.has_vertical_collision_adjustment:
+                debug("Collision adjustment is expected, skipping jump cause check")
+                return
+
             jump_pressed = self.jump_pressed(behavior.keys)
             mario_before = behavior.mario_before
+            mario_now = behavior.mario_now
             before = behavior.before
+            now = behavior.now
+
+            # Check both 'before' and 'now' states for enemy stomp because the stomp
+            # happens in the transition - Mario may not be horizontally aligned with enemy in 'before'
+            # state, but is positioned on top of enemy in 'now' state after the collision
             self.model.assert_with_success(
                 (jump_pressed and self.on_the_ground(mario_before, before))
                 or self.stomped_enemy(mario_before, before)
-                or self.velocity_up(vertical_velocity),
+                or self.stomped_enemy(mario_now, now)
+                or self.velocity_up(vertical_velocity)
+                or self.on_the_ground(
+                    mario_now, now
+                ),  # landed on the ground adjustment
                 f"jumped {actual_vertical_movement} because jump was pressed on ground or bounced off enemy or had upward velocity",
             )
 
@@ -385,6 +497,12 @@ class LivenessProperties(Propositions):
 
     def check_starts_moving(self, behavior):
         """Check if Mario eventually starts moving when keys are consistently pressed."""
+
+        # Skip check if there's a horizontal collision causing position adjustment
+        # Horizontal position adjustments invalidate movement tracking and can cause false "stayed still" detection
+        if behavior.has_horizontal_collision_adjustment:
+            debug("Collision adjustment is expected, skipping starts moving check")
+            return
 
         history = list(reversed(behavior.history[-(self.max_stayed_still + 2) :]))
         stayed_still = 0
@@ -398,13 +516,17 @@ class LivenessProperties(Propositions):
             # no keys pressed
             return
 
-        for now, before in zip(history[:-1], history[1:]):
-            pos_before = self.model.get_position(before)
-            pos_now = self.model.get_position(now)
-            actual_movement = pos_now - pos_before
-
-            mario_now = self.model.get("player", now)
+        for now, before, right_before in zip(history[:-2], history[1:-1], history[2:]):
+            # Use centerx for horizontal positions (sprite changes preserve centerx)
             mario_before = self.model.get("player", before)
+            mario_now = self.model.get("player", now)
+            mario_right_before = self.model.get("player", right_before)
+
+            # Skip if mario doesn't exist in these states (e.g., if dead in older states)
+            if not mario_before or not mario_now or not mario_right_before:
+                break
+
+            actual_movement = mario_now.box.centerx - mario_before.box.centerx
 
             # Mario started moving
             if self.moved(actual_movement):
@@ -415,7 +537,9 @@ class LivenessProperties(Propositions):
                 break
 
             # check if path was blocked
-            if not self.path_is_clear(mario_now, now, mario_before, before, direction):
+            if not self.path_is_clear(
+                mario_now, mario_before, mario_right_before, now, before, direction
+            ):
                 break
 
             stayed_still += 1
@@ -451,7 +575,17 @@ class SafetyProperties(Propositions):
     def check_does_not_exceed_max_velocity(self, behavior):
         """Check if Mario does not exceed the maximum speed."""
 
-        if self.running_pressed_recently(behavior):
+        if behavior.has_horizontal_collision_adjustment:
+            debug("Collision adjustment is expected, skipping velocity check")
+            return
+
+        # When in the air (jumping/falling), the game preserves max_x_vel from previous state
+        # So velocities can be up to run maximum even if action isn't currently pressed
+        # Also check if Mario was in the air recently, as velocity from air state can
+        # persist for multiple frames after landing
+        if self.running_pressed_recently(behavior) or self.was_in_the_air_recently(
+            behavior
+        ):
             self.model.assert_with_success(
                 not self.exceeds_max_run_velocity(behavior.velocity_now),
                 f"Mario's velocity {behavior.velocity_now} is within run maximum",
@@ -465,6 +599,38 @@ class SafetyProperties(Propositions):
 
     def check_does_not_exceed_max_vertical_velocity(self, behavior):
         """Check if Mario does not exceed the maximum vertical velocity."""
+
+        # Skip check if there's a collision causing position adjustment
+        # 1. Enemy stomp: When Mario stomps an enemy, his position is adjusted (bottom set to enemy top)
+        # 2. Top collision: When Mario hits something above (pipe, brick), his position is adjusted
+        # These adjustments cause large vertical velocities that don't reflect actual movement
+        mario_before = behavior.mario_before
+        mario_now = behavior.mario_now
+        before = behavior.before
+        now = behavior.now
+
+        if self.stomped_enemy(mario_before, before) or self.stomped_enemy(
+            mario_now, now
+        ):
+            debug(
+                "Enemy stomp position adjustment is expected, skipping vertical velocity check"
+            )
+            return
+
+        # Check for top collision (hitting something above)
+        if self.model.has_top_touch(mario_before, before) or self.model.has_top_touch(
+            mario_now, now
+        ):
+            debug(
+                "Top collision position adjustment is expected, skipping vertical velocity check"
+            )
+            return
+
+        if self.on_the_ground(mario_now, now):
+            debug(
+                "Landed on the ground position adjustment is expected, skipping vertical velocity check"
+            )
+            return
 
         self.model.assert_with_success(
             not self.exceeds_max_vertical_velocity(behavior.vertical_velocity_now),

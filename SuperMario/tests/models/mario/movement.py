@@ -78,6 +78,7 @@ class Behavior:
                 self.mario_right_before,
                 self.now,
                 self.before,
+                self.right_before,
             )
         )
         self.has_vertical_collision_adjustment = (
@@ -87,6 +88,7 @@ class Behavior:
                 self.mario_right_before,
                 self.now,
                 self.before,
+                self.right_before,
             )
         )
         # Combined flag preserved for any checks that don't care about direction
@@ -392,23 +394,23 @@ class CausalProperties(Propositions):
                         velocity, right_pressed, left_pressed
                     )
                     or (
-                        self.velocity_left(velocity)
+                        (left_pressed or self.velocity_left(velocity))
                         and self.left_touching(
                             mario_now, mario_before, mario_right_before, now, before
                         )
                     )
                     or (
-                        self.velocity_right(velocity)
+                        (right_pressed or self.velocity_right(velocity))
                         and self.right_touching(
                             mario_now, mario_before, mario_right_before, now, before
                         )
                     )
                     or (
-                        self.velocity_left(velocity)
+                        (left_pressed or self.velocity_left(velocity))
                         and self.at_left_boundary(mario_now, now)
                     )
                     or (
-                        self.velocity_right(velocity)
+                        (right_pressed or self.velocity_right(velocity))
                         and self.at_right_boundary(mario_now, now)
                     )
                 ),
@@ -600,36 +602,8 @@ class SafetyProperties(Propositions):
     def check_does_not_exceed_max_vertical_velocity(self, behavior):
         """Check if Mario does not exceed the maximum vertical velocity."""
 
-        # Skip check if there's a collision causing position adjustment
-        # 1. Enemy stomp: When Mario stomps an enemy, his position is adjusted (bottom set to enemy top)
-        # 2. Top collision: When Mario hits something above (pipe, brick), his position is adjusted
-        # These adjustments cause large vertical velocities that don't reflect actual movement
-        mario_before = behavior.mario_before
-        mario_now = behavior.mario_now
-        before = behavior.before
-        now = behavior.now
-
-        if self.stomped_enemy(mario_before, before) or self.stomped_enemy(
-            mario_now, now
-        ):
-            debug(
-                "Enemy stomp position adjustment is expected, skipping vertical velocity check"
-            )
-            return
-
-        # Check for top collision (hitting something above)
-        if self.model.has_top_touch(mario_before, before) or self.model.has_top_touch(
-            mario_now, now
-        ):
-            debug(
-                "Top collision position adjustment is expected, skipping vertical velocity check"
-            )
-            return
-
-        if self.on_the_ground(mario_now, now):
-            debug(
-                "Landed on the ground position adjustment is expected, skipping vertical velocity check"
-            )
+        if behavior.has_vertical_collision_adjustment:
+            debug("Collision adjustment is expected, skipping vertical velocity check")
             return
 
         self.model.assert_with_success(

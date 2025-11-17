@@ -65,13 +65,12 @@ class Model:
         for name in objects:
             boxes += state.boxes.get(name, [])
 
-        # Check each box for a collision using the simple collides method
+        # Check each box for a collision using pygame's colliderect (same as game)
         for box in boxes:
             if box is element:
                 continue
 
-            if self.game.vision.collides(element.box, box.box):
-                self.game.vision.overlay(boxes=[element.box, box.box])
+            if element.box.colliderect(box.box):
                 return True
 
         return False
@@ -124,11 +123,56 @@ class Model:
             boxes += state.boxes.get(name, [])
 
         # Check each box for a collision using direct colliderect (same as game)
+        # The game uses spritecollideany to detect overlap, then checks position:
+        # if player.rect.x < collider.rect.x: right-side collision (player to left of collider)
         for box in boxes:
             if box is element:
                 continue
             if test_box1.colliderect(box.box) or test_box2.colliderect(box.box):
-                return True
+                # Verify it's a right-side collision: element is to the left of box
+                # (matching game logic: if self.player.rect.x < collider.rect.x)
+                if element.box.x < box.box.x:
+                    return True
+        return False
+
+    def has_left_collision(self, element, state, objects=None):
+        """Check if element has actual collision on the left side (overlap detection)."""
+        if objects is None:
+            objects = self.solid_objects
+
+        boxes = []
+        for name in objects:
+            boxes += state.boxes.get(name, [])
+
+        for box in boxes:
+            if box is element:
+                continue
+            # Check for actual overlap (matching spritecollideany behavior)
+            if element.box.colliderect(box.box):
+                # Verify it's a left-side collision (box is to the left of element)
+                # Element's left edge should be near or past box's right edge
+                if element.box.left <= box.box.right:
+                    return True
+        return False
+
+    def has_right_collision(self, element, state, objects=None):
+        """Check if element has actual collision on the right side (overlap detection)."""
+        if objects is None:
+            objects = self.solid_objects
+
+        boxes = []
+        for name in objects:
+            boxes += state.boxes.get(name, [])
+
+        for box in boxes:
+            if box is element:
+                continue
+            # Check for actual overlap (matching spritecollideany behavior)
+            if element.box.colliderect(box.box):
+                # Verify it's a right-side collision (box is to the right of element)
+                # Element's right edge should be near or past box's left edge
+                if element.box.right >= box.box.left:
+                    return True
         return False
 
     def has_left_touch(self, element, element_before, state, objects=None):
@@ -150,11 +194,16 @@ class Model:
             boxes += state.boxes.get(name, [])
 
         # Check each box for a collision using direct colliderect (same as game)
+        # The game uses spritecollideany to detect overlap, then checks position:
+        # else: left-side collision (player to right of collider)
         for box in boxes:
             if box is element:
                 continue
             if test_box1.colliderect(box.box) or test_box2.colliderect(box.box):
-                return True
+                # Verify it's a left-side collision: element is to the right of box
+                # (matching game logic: else case when player.rect.x >= collider.rect.x)
+                if element.box.x >= box.box.x:
+                    return True
         return False
 
     def has_bottom_collision(self, element, state, objects=None):
@@ -207,6 +256,7 @@ class Model:
         element_right_before,
         state_now,
         state_before,
+        state_right_before,
         side=None,
     ):
         """
@@ -215,6 +265,8 @@ class Model:
         This is intended to mirror cases where the game snaps Mario horizontally, such as:
         - Side collisions with solid level geometry (walls, pipes, boxes, bricks)
         - Kicking a non-sliding shell/koopa from the side
+        - Wall pinning (multi-frame contact)
+        - Head collisions causing horizontal shoves
         """
         # New side collision with solid objects (box, brick, pipe, ground, step, collider)
         check_left = side in (None, "left")
@@ -258,8 +310,75 @@ class Model:
             right_touch_now and not right_touch_before
         )
 
+        # Sometimes Mario gets pinned against a wall for multiple frames:
+        # touch started in the previous frame and is still present now while he can't move.
+        # Treat that as a collision-caused adjustment so "stayed in place" checks are skipped.
+        left_touch_right_before = (
+            self.has_left_touch(
+                element_right_before,
+                element_before,
+                state_right_before,
+                objects=self.solid_objects,
+            )
+            if check_left
+            else False
+        )
+        right_touch_right_before = (
+            self.has_right_touch(
+                element_right_before,
+                element_before,
+                state_right_before,
+                objects=self.solid_objects,
+            )
+            if check_right
+            else False
+        )
+        pinned_left = (
+            left_touch_now and left_touch_before and not left_touch_right_before
+        )
+        pinned_right = (
+            right_touch_now and right_touch_before and not right_touch_right_before
+        )
+
+        # New head collision causing horizontal adjustment (e.g., Mario hits a brick from below and is shoved sideways)
+        top_touch_before = self.has_top_touch(
+            element_before, state_before, objects=self.solid_objects
+        )
+        top_touch_right_before = self.has_top_touch(
+            element_right_before, state_right_before, objects=self.solid_objects
+        )
+        head_collision_before = top_touch_before and not top_touch_right_before
+
         # New side collision with shell/koopa (kicking shell)
+        # Use actual collision detection (overlap) rather than just touch for shell kicks
         shell_objects = ["koopa", "shell"]
+        left_shell_collision_now = (
+            self.has_left_collision(element_now, state_now, objects=shell_objects)
+            if check_left
+            else False
+        )
+        right_shell_collision_now = (
+            self.has_right_collision(element_now, state_now, objects=shell_objects)
+            if check_right
+            else False
+        )
+        left_shell_collision_before = (
+            self.has_left_collision(element_before, state_before, objects=shell_objects)
+            if check_left
+            else False
+        )
+        right_shell_collision_before = (
+            self.has_right_collision(
+                element_before, state_before, objects=shell_objects
+            )
+            if check_right
+            else False
+        )
+        has_new_shell_collision = (
+            left_shell_collision_now and not left_shell_collision_before
+        ) or (right_shell_collision_now and not right_shell_collision_before)
+
+        # Also check for shell touches (for cases where touch detection is needed)
         left_shell_touch_now = (
             self.has_left_touch(
                 element_now, element_before, state_now, objects=shell_objects
@@ -298,10 +417,23 @@ class Model:
             left_shell_touch_now and not left_shell_touch_before
         ) or (right_shell_touch_now and not right_shell_touch_before)
 
-        return has_new_solid_side_collision or has_new_shell_side_collision
+        return (
+            has_new_solid_side_collision
+            or has_new_shell_side_collision
+            or has_new_shell_collision
+            or pinned_left
+            or pinned_right
+            or head_collision_before
+        )
 
     def has_collision_causing_vertical_adjustment(
-        self, element_now, element_before, element_right_before, state_now, state_before
+        self,
+        element_now,
+        element_before,
+        element_right_before,
+        state_now,
+        state_before,
+        state_right_before,
     ):
         """
         Check if element has a vertical collision that causes a position adjustment.
@@ -321,13 +453,21 @@ class Model:
         has_new_bottom_collision = bottom_touch_now and not bottom_touch_before
 
         # New top collision with solid objects (head hit)
+        # Handle multi-frame top touches (e.g., brick bumps that span multiple frames)
         top_touch_now = self.has_top_touch(
             element_now, state_now, objects=self.solid_objects
         )
         top_touch_before = self.has_top_touch(
             element_before, state_before, objects=self.solid_objects
         )
-        has_new_top_collision = top_touch_now and not top_touch_before
+        top_touch_right_before = self.has_top_touch(
+            element_right_before, state_right_before, objects=self.solid_objects
+        )
+        # Detect new top collision: either a new touch, or a touch that persists
+        # from right_before -> before -> now (multi-frame contact with bumping brick)
+        has_new_top_collision = (top_touch_now and not top_touch_before) or (
+            top_touch_now and top_touch_before and not top_touch_right_before
+        )
 
         # New stomp on enemy (bottom snap onto enemy)
         bottom_enemy_touch_now = self.has_bottom_touch(
@@ -341,17 +481,52 @@ class Model:
         return has_new_bottom_collision or has_new_top_collision or has_new_enemy_stomp
 
     def has_collision_causing_position_adjustment(
-        self, element_now, element_before, element_right_before, state_now, state_before
+        self,
+        element_now,
+        element_before,
+        element_right_before,
+        state_now,
+        state_before,
+        state_right_before,
     ):
         """
         Backwards-compatible wrapper that checks for any collision-causing position
         adjustment (horizontal or vertical).
         """
         return self.has_collision_causing_horizontal_adjustment(
-            element_now, element_before, element_right_before, state_now, state_before
+            element_now,
+            element_before,
+            element_right_before,
+            state_now,
+            state_before,
+            state_right_before,
         ) or self.has_collision_causing_vertical_adjustment(
-            element_now, element_before, element_right_before, state_now, state_before
+            element_now,
+            element_before,
+            element_right_before,
+            state_now,
+            state_before,
+            state_right_before,
         )
+
+    def has_top_collision(self, element, state, objects=None):
+        """Check if element has actual collision on the top side (overlap detection)."""
+        if objects is None:
+            objects = self.solid_objects
+
+        boxes = []
+        for name in objects:
+            boxes += state.boxes.get(name, [])
+
+        for box in boxes:
+            if box is element:
+                continue
+            # Check for actual overlap (matching spritecollideany behavior)
+            if element.box.colliderect(box.box):
+                # Verify it's a top collision (element is below box)
+                if element.box.top > box.box.top:
+                    return True
+        return False
 
     def has_top_touch(self, element, state, objects=None):
         """Check if element has collision on the top side."""

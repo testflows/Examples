@@ -161,10 +161,13 @@ class Control(tools.Control):
             for event in pg.event.get():
                 if event.type == pg.QUIT:
                     self.done = True
-                elif event.type == pg.KEYDOWN:
-                    self.keys = pg.key.get_pressed()
-                elif event.type == pg.KEYUP:
-                    self.keys = pg.key.get_pressed()
+                elif event.type in (pg.KEYDOWN, pg.KEYUP):
+                    pressed = pg.key.get_pressed()
+                    new_keys = Keys()
+                    for code in all_key_codes:
+                        if pressed[code]:
+                            new_keys[code] = True
+                    self.keys = new_keys
         else:
             # In automated mode, clear event queue without processing
             # This prevents stray events from affecting deterministic execution

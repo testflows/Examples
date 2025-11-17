@@ -368,6 +368,9 @@ class Level(tools.State):
                 else:
                     self.player.start_death_jump(self.game_info)
                     self.death_timer = self.current_time
+            elif shell.state == c.SHELL_KICK:
+                shell.rect.x += shell.x_vel * 4
+                shell.state = c.SHELL_SLIDE
             else:
                 self.update_score(400, shell, 0)
                 if self.player.rect.x < shell.rect.x:
@@ -378,8 +381,7 @@ class Level(tools.State):
                     self.player.rect.x = shell.rect.left
                     shell.direction = c.LEFT
                     shell.x_vel = -10
-                shell.rect.x += shell.x_vel * 4
-                shell.state = c.SHELL_SLIDE
+                shell.state = c.SHELL_KICK
         elif coin:
             self.update_score(100, coin, 1)
             coin.kill()

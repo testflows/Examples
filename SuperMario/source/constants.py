@@ -177,7 +177,7 @@ DEATH_JUMP = 'death jump'
 
 #KOOPA STUFF
 SHELL_SLIDE = 'shell slide'
-
+SHELL_KICK = 'shell kick'
 #FLAG STATE
 TOP_OF_POLE = 'top of pole'
 SLIDE_DOWN = 'slide down'

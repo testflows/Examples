@@ -13,20 +13,22 @@ class Behavior:
         behavior = self.history
         model = self.model
 
-        if len(behavior) < 3:
+        if len(behavior) < 4:
             return False
 
-        self.right_before, self.before, self.now = behavior[-3:]
+        self.right_right_before, self.right_before, self.before, self.now = behavior[-4:]
 
         if (
-            not self.right_before.player
+            not self.right_right_before.player
+            or not self.right_before.player
             or not self.before.player
             or not self.now.player
         ):
             return False
 
         if (
-            self.right_before.player.dead
+            self.right_right_before.player.dead
+            or self.right_before.player.dead
             or self.before.player.dead
             or self.now.player.dead
         ):
@@ -36,19 +38,23 @@ class Behavior:
         self.mario_now = model.get("player", self.now)
         self.mario_before = model.get("player", self.before)
         self.mario_right_before = model.get("player", self.right_before)
+        self.mario_right_right_before = model.get("player", self.right_right_before)
 
-        if not self.mario_now or not self.mario_before or not self.mario_right_before:
+        if not self.mario_now or not self.mario_before or not self.mario_right_before or not self.mario_right_right_before:
             return False
 
         # Get positions
         # Use centerx for horizontal positions (sprite changes preserve centerx, not left x)
         # This avoids false movement detection when sprite width changes during animation
+        self.pos_right_right_before = self.mario_right_right_before.box.centerx
         self.pos_right_before = self.mario_right_before.box.centerx
         self.pos_before = self.mario_before.box.centerx
         self.pos_now = self.mario_now.box.centerx
 
         self.velocity = self.pos_before - self.pos_right_before
         self.velocity_now = self.pos_now - self.pos_before
+        self.velocity_before = self.pos_before - self.pos_right_before
+        self.velocity_right_before = self.pos_right_before - self.pos_right_right_before
         self.actual_movement = self.pos_now - self.pos_before
 
         # Vertical (y-axis) positions and velocities
@@ -85,16 +91,39 @@ class Behavior:
             model.has_collision_causing_vertical_adjustment(
                 self.mario_now,
                 self.mario_before,
-                self.mario_right_before,
                 self.now,
                 self.before,
-                self.right_before,
             )
         )
         # Combined flag preserved for any checks that don't care about direction
         self.has_collision_adjustment = (
             self.has_horizontal_collision_adjustment
             or self.has_vertical_collision_adjustment
+        )
+
+        # Check if we just had collision-causing position adjustments (computed once, used by multiple checks)
+        self.had_horizontal_collision_adjustment = (
+            model.has_collision_causing_horizontal_adjustment(
+                self.mario_before,
+                self.mario_right_before,
+                self.mario_right_right_before,
+                self.before,
+                self.right_before,
+                self.right_right_before,
+            )
+        )
+        self.had_vertical_collision_adjustment = (
+            model.has_collision_causing_vertical_adjustment(
+                self.mario_before,
+                self.mario_right_before,
+                self.before,
+                self.right_before,
+            )
+        )
+        # Combined flag preserved for any checks that don't care about direction
+        self.had_collision_adjustment = (
+            self.had_horizontal_collision_adjustment
+            or self.had_vertical_collision_adjustment
         )
 
         return self
@@ -334,6 +363,12 @@ class CausalProperties(Propositions):
                 )
                 return
 
+            if behavior.had_horizontal_collision_adjustment:
+                debug(
+                    "Just had collision adjustment, skipping right movement cause check"
+                )
+                return
+
             self.model.assert_with_success(
                 self.has_right_movement_cause(velocity, right_pressed),
                 f"moved right because {f'velocity is {velocity}' if velocity > 0 else 'right key is pressed'}",
@@ -352,6 +387,12 @@ class CausalProperties(Propositions):
             if behavior.has_horizontal_collision_adjustment:
                 debug(
                     "Collision adjustment is expected, skipping left movement cause check"
+                )
+                return
+
+            if behavior.had_horizontal_collision_adjustment:
+                debug(
+                    "Just had collision adjustment, skipping left movement cause check"
                 )
                 return
 
@@ -380,12 +421,12 @@ class CausalProperties(Propositions):
         if self.stayed_in_place(actual_movement):
             # Skip check if there's a collision causing position adjustment
             # Position adjustments can cause position to stay the same even when velocity suggests movement
-            if behavior.has_horizontal_collision_adjustment:
+            if behavior.has_horizontal_collision_adjustment or behavior.had_horizontal_collision_adjustment:
                 debug(
                     "Collision adjustment is expected, skipping stayed in place cause check"
                 )
                 return
-
+            
             self.model.assert_with_success(
                 (
                     self.no_keys(right_pressed, left_pressed)
@@ -580,6 +621,10 @@ class SafetyProperties(Propositions):
         if behavior.has_horizontal_collision_adjustment:
             debug("Collision adjustment is expected, skipping velocity check")
             return
+        
+        if behavior.had_horizontal_collision_adjustment:
+            debug("Just had collision adjustment, skipping velocity check")
+            return
 
         # When in the air (jumping/falling), the game preserves max_x_vel from previous state
         # So velocities can be up to run maximum even if action isn't currently pressed
@@ -604,6 +649,10 @@ class SafetyProperties(Propositions):
 
         if behavior.has_vertical_collision_adjustment:
             debug("Collision adjustment is expected, skipping vertical velocity check")
+            return
+        
+        if behavior.had_vertical_collision_adjustment:
+            debug("Just had vertical collision adjustment, skipping vertical velocity check")
             return
 
         self.model.assert_with_success(

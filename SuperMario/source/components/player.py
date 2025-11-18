@@ -494,9 +494,10 @@ class Player(pg.sprite.Sprite):
                 self.hurt_invincible_timer = self.current_time
                 self.hurt_invincible_timer2 = self.current_time
             elif (self.current_time - self.hurt_invincible_timer) < 2000:
-                if (self.current_time - self.hurt_invincible_timer2) < 35:
+                elapsed = self.current_time - self.hurt_invincible_timer2
+                if elapsed < 35:
                     self.image.set_alpha(0)
-                elif (self.current_time - self.hurt_invincible_timer2) < 70:
+                else:
                     self.image.set_alpha(255)
                     self.hurt_invincible_timer2 = self.current_time
             else:

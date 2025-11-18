@@ -132,8 +132,9 @@ class Level(tools.State):
                     self.box_group.add(box.Box(data['x'], data['y'], data['type'], self.powerup_group))
             
     def setup_player(self):
-        if self.player is None:
-            self.player = player.Player(self.game_info[c.PLAYER_NAME])
+        desired_player = self.game_info[c.PLAYER_NAME]
+        if self.player is None or self.player.player_name != desired_player:
+            self.player = player.Player(desired_player)
         else:
             self.player.restart()
         self.player.rect.x = self.viewport.x + self.player_x
@@ -440,7 +441,7 @@ class Level(tools.State):
                 self.player.y_vel = -7
         elif shell:
             if self.player.y_vel > 0:
-                if shell.state != c.SHELL_SLIDE:
+                if shell.state == c.SHELL_Y_KICK:
                     shell.state = c.SHELL_SLIDE
                     if self.player.rect.centerx < shell.rect.centerx:
                         shell.direction = c.RIGHT
@@ -448,6 +449,10 @@ class Level(tools.State):
                     else:
                         shell.direction = c.LEFT
                         shell.rect.right = self.player.rect.left - 5
+                elif shell.state != c.SHELL_SLIDE:
+                    self.player.rect.bottom = shell.rect.top
+                    shell.state = c.SHELL_Y_KICK
+
         self.check_is_falling(self.player)
         self.check_if_player_on_IN_pipe()
     
@@ -570,6 +575,8 @@ class Level(tools.State):
             self.next = c.LOAD_SCREEN
 
     def update_viewport(self):
+        if self.in_frozen_state():
+            return
         third = self.viewport.x + self.viewport.w//3
         player_center = self.player.rect.centerx
         

@@ -74,6 +74,24 @@ class Model:
         """Check if element is past the left boundary (indicates a bug)."""
         return element.box.x < state.start_x
 
+    def is_visible_in_viewport(self, element, state):
+        """Return True if the element intersects the current viewport bounds."""
+        viewport = getattr(state, "viewport", None)
+        if viewport is None or element is None:
+            return True
+
+        vx, vy, vw, vh = viewport
+        element_rect = element.box
+        right = vx + vw
+        bottom = vy + vh
+
+        return (
+            element_rect.left >= vx
+            and element_rect.right <= right
+            and element_rect.top >= vy
+            and element_rect.bottom <= bottom
+        )
+
     def has_right_touch(self, element, element_before, state, objects=None):
         """Check if element has collision on the right side."""
         if objects is None:
@@ -297,6 +315,27 @@ class Model:
         return self.has_x_collision_adjustment(
             player
         ) or self.has_y_collision_adjustment(player)
+
+    def is_horizontal_pipe(self, element):
+        """Return True if the element represents a horizontal pipe Mario can enter."""
+        return element.name == "pipe" and element.box.width > element.box.height
+
+    def collides_with_horizontal_pipe(self, element, state):
+        """Return True if element overlaps a horizontal pipe entrance (side collision)."""
+        if not element:
+            return False
+
+        for pipe in state.boxes.get("pipe", []):
+            if pipe is element:
+                continue
+            if not self.is_horizontal_pipe(pipe):
+                continue
+            if not element.box.colliderect(pipe.box):
+                continue
+            if element.box.top > pipe.box.top:
+                return True
+
+        return False
 
     def direction(self, state, in_the_air):
         """Return the direction Mario based on the keys pressed."""

@@ -127,6 +127,10 @@ class Propositions:
         self.max_recently_run = 45
         self.max_recently_in_the_air = 45
         self.max_was_in_transition = 55
+        self.max_small_horizontal_move = 50
+        self.max_big_horizontal_move = 100
+        self.max_small_vertical_move = 50
+        self.max_big_vertical_move = 100
 
     def was_in_transition(self, behavior):
         for state in behavior.history[-self.max_was_in_transition :]:
@@ -234,6 +238,14 @@ class Propositions:
     def past_right_boundary(self, mario_now, state):
         return self.model.is_past_right_boundary(mario_now, state)
 
+    def is_within_viewport(self, behavior):
+        """Return True if Mario intersects the current viewport."""
+        viewport = getattr(behavior.now, "viewport", None)
+        if viewport is None:
+            debug("Viewport information missing, assuming Mario is within viewport")
+            return True
+        return self.model.is_visible_in_viewport(behavior.mario_now, behavior.now)
+
     def on_the_ground_collision(self, mario_now, now):
         """Check if Mario is on the ground (has bottom collision)."""
         return self.model.has_bottom_collision(mario_now, now)
@@ -325,6 +337,28 @@ class Propositions:
 
     def exceeds_max_vertical_velocity(self, velocity, tolerance=1):
         return abs(velocity) > self.max_vertical_velocity + tolerance
+
+    def exceeds_max_horizontal_move(self, behavior):
+        movement = behavior.actual_movement
+        if self.is_big(behavior):
+            return abs(movement) > self.max_big_horizontal_move
+        else:
+            return abs(movement) > self.max_small_horizontal_move
+
+    def exceeds_max_vertical_move(self, behavior):
+        movement = behavior.actual_vertical_movement
+        if self.is_big(behavior):
+            return abs(movement) > self.max_big_vertical_move
+        else:
+            return abs(movement) > self.max_small_vertical_move
+
+    def entering_horizontal_pipe(self, mario, state):
+        return self.model.collides_with_horizontal_pipe(
+            mario, state
+        )
+    
+    def collides_with_solid_objects(self, mario, state):
+        return self.model.has_collision(mario, state, objects=self.model.solid_objects)
 
 
 class CausalProperties(Propositions):
@@ -644,6 +678,40 @@ class SafetyProperties(Propositions):
             f"Mario's vertical velocity {behavior.vertical_velocity_now} is less than the maximum",
         )
 
+    def check_does_not_exceed_max_position_adjustment(self, behavior):
+        """Ensure Mario's per-frame displacement stays within physical limits."""
+
+        horizontal_movement = behavior.actual_movement
+        vertical_movement = behavior.actual_vertical_movement
+
+        self.model.assert_with_success(
+            not self.exceeds_max_horizontal_move(behavior),
+            f"Mario's horizontal move {horizontal_movement}px is within max limits",
+        )
+
+        self.model.assert_with_success(
+            not self.exceeds_max_vertical_move(behavior),
+            f"Mario's vertical move {vertical_movement}px is within max limits",
+        )
+
+    def check_does_not_overlap_with_solid_objects(self, behavior):
+        """Check if Mario does not overlap with solid objects."""
+
+        if self.entering_horizontal_pipe(behavior.mario_now, behavior.now):
+            debug("Mario is entering a horizontal pipe, skipping overlap with solid objects check")
+            return
+
+        self.model.assert_with_success(
+            not self.collides_with_solid_objects(behavior.mario_now, behavior.now),
+            "Mario does not overlap any solid objects",
+        )
+
+    def check_does_not_slideout_of_viewport(self, behavior):
+        """Ensure Mario remains visible within the camera viewport."""
+        self.model.assert_with_success(
+            self.is_within_viewport(behavior),
+            "Mario stays within the viewport",
+        )
 
 class Movement(Model):
     """Mario movement model."""
@@ -678,7 +746,10 @@ class Movement(Model):
 
             self.safety.check_does_not_exceed_max_velocity(behavior)
             self.safety.check_does_not_exceed_max_vertical_velocity(behavior)
+            self.safety.check_does_not_exceed_max_position_adjustment(behavior)
 
             # Validate what Mario should never do
             self.safety.check_does_not_move_past_left_boundary(behavior)
             self.safety.check_does_not_move_past_right_boundary(behavior)
+            self.safety.check_does_not_overlap_with_solid_objects(behavior)
+            self.safety.check_does_not_slideout_of_viewport(behavior)

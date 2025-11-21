@@ -125,6 +125,10 @@ class BehaviorState:
         self.start_x = None
         self.end_x = None
         self.current_time = 0
+        if viewport:
+            self.viewport = (viewport.x, viewport.y, viewport.w, viewport.h)
+        else:
+            self.viewport = None
 
         # Extract player state
         if hasattr(state, "player"):
@@ -148,6 +152,7 @@ class BehaviorState:
             f"player={self.player}, "
             f"start_x={self.start_x}, "
             f"end_x={self.end_x}, "
+            f"viewport={self.viewport}, "
             f"current_time={self.current_time})"
         )
 

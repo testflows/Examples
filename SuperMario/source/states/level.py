@@ -250,6 +250,7 @@ class Level(tools.State):
                 self.player.state = c.FLAGPOLE
                 if self.player.rect.bottom < self.flag.rect.y:
                     self.player.rect.bottom = self.flag.rect.y
+                    self.player.collision_info.y_adjusted = True
                 self.flag.state = c.SLIDE_DOWN
                 self.update_flag_score()
             elif checkpoint.type == c.CHECKPOINT_TYPE_CASTLE:
@@ -265,6 +266,7 @@ class Level(tools.State):
                 self.box_group.add(mushroom_box)
                 self.player.y_vel = 7
                 self.player.rect.y = mushroom_box.rect.bottom
+                self.player.collision_info.y_adjusted = True
                 self.player.state = c.FALL
             elif checkpoint.type == c.CHECKPOINT_TYPE_PIPE:
                 self.player.state = c.WALK_AUTO
@@ -294,8 +296,10 @@ class Level(tools.State):
         self.player.rect.x += round(self.player.x_vel)
         if self.player.rect.x < self.start_x:
             self.player.rect.x = self.start_x
+            self.player.collision_info.x_adjusted = True
         elif self.player.rect.right > self.end_x:
             self.player.rect.right = self.end_x
+            self.player.collision_info.x_adjusted = True
         self.check_player_x_collisions()
         
         if not self.player.dead:
@@ -382,6 +386,7 @@ class Level(tools.State):
                     self.player.rect.x = shell.rect.left
                     shell.direction = c.LEFT
                     shell.x_vel = -10
+                self.player.collision_info.x_adjusted = True
                 shell.state = c.SHELL_KICK
         elif coin:
             self.update_score(100, coin, 1)
@@ -396,6 +401,7 @@ class Level(tools.State):
         else:
             self.player.rect.left = collider.rect.right
         self.player.x_vel = 0
+        self.player.collision_info.x_adjusted = True
 
     def check_player_y_collisions(self):
         ground_step_pipe = pg.sprite.spritecollideany(self.player, self.ground_step_pipe_group)
@@ -439,6 +445,7 @@ class Level(tools.State):
                 self.player.rect.bottom = enemy.rect.top
                 self.player.state = c.JUMP
                 self.player.y_vel = -7
+                self.player.collision_info.y_adjusted = True
         elif shell:
             if self.player.y_vel > 0:
                 if shell.state == c.SHELL_Y_KICK:
@@ -451,6 +458,7 @@ class Level(tools.State):
                         shell.rect.right = self.player.rect.left - 5
                 elif shell.state != c.SHELL_SLIDE:
                     self.player.rect.bottom = shell.rect.top
+                    self.player.collision_info.y_adjusted = True
                     shell.state = c.SHELL_Y_KICK
 
         self.check_is_falling(self.player)
@@ -499,6 +507,7 @@ class Level(tools.State):
                 self.player.state = c.WALK_AUTO
             else:
                 self.player.state = c.WALK
+        self.player.collision_info.y_adjusted = True
     
     def check_if_enemy_on_brick_box(self, brick):
         brick.rect.y -= 5

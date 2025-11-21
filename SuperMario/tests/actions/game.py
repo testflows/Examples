@@ -57,6 +57,7 @@ class Player:
             "walking_timer",
             "current_time",
             "frame_index",
+            "collision_info",
         ]
 
         for attr in attributes:
@@ -64,9 +65,17 @@ class Player:
 
         self.x_pos = player.rect.x
         self.y_pos = player.rect.y
+        self.collision_info = player.collision_info.to_dict()
 
     def __str__(self):
-        return f"Player(x_vel={self.x_vel}, y_vel={self.y_vel}, state='{self.state}', big={self.big}, dead={self.dead})"
+        return (
+            f"Player(x_vel={self.x_vel}, "
+            f"y_vel={self.y_vel}, "
+            f"state='{self.state}', "
+            f"big={self.big}, "
+            f"dead={self.dead}, "
+            f"collision_info={self.collision_info})"
+        )
 
     def __repr__(self):
         return str(self)
@@ -132,7 +141,15 @@ class BehaviorState:
             self.end_x = state.end_x
 
     def __str__(self):
-        return f"BehaviorState(level_num={self.level_num}, keys={self.keys}, boxes={self.boxes}, player={self.player}, start_x={self.start_x}, end_x={self.end_x}, current_time={self.current_time})"
+        return (
+            f"BehaviorState(level_num={self.level_num}, "
+            f"keys={self.keys}, "
+            f"boxes={self.boxes}, "
+            f"player={self.player}, "
+            f"start_x={self.start_x}, "
+            f"end_x={self.end_x}, "
+            f"current_time={self.current_time})"
+        )
 
     def __repr__(self):
         return str(self)

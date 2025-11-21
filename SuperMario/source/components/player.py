@@ -7,6 +7,23 @@ from .. import setup, tools
 from .. import constants as c
 from ..components import powerup
 
+class CollisionInfo:
+    __slots__ = ("x_adjusted", "y_adjusted")
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.x_adjusted = False
+        self.y_adjusted = False
+
+    def to_dict(self):
+        return {
+            "x_adjusted": self.x_adjusted,
+            "y_adjusted": self.y_adjusted,
+        }
+
+
 class Player(pg.sprite.Sprite):
     def __init__(self, player_name):
         pg.sprite.Sprite.__init__(self)
@@ -27,6 +44,7 @@ class Player(pg.sprite.Sprite):
         self.state = c.WALK
         self.image = self.right_frames[self.frame_index]
         self.rect = self.image.get_rect()
+        self.collision_info = CollisionInfo()
 
     def restart(self):
         '''restart after player is dead or go to next level'''
@@ -130,6 +148,7 @@ class Player(pg.sprite.Sprite):
         self.left_frames = self.small_normal_frames[1]
 
     def update(self, keys, game_info, fire_group):
+        self.collision_info.reset()
         self.current_time = game_info[c.CURRENT_TIME]
         self.handle_state(keys, fire_group)
         self.check_if_hurt_invincible()

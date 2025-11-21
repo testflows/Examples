@@ -410,8 +410,8 @@ class Level(tools.State):
 
         # decrease runtime delay: when player is on the ground, don't check brick and box
         if self.player.rect.bottom < c.GROUND_HEIGHT:
-            brick = pg.sprite.spritecollideany(self.player, self.brick_group)
-            box = pg.sprite.spritecollideany(self.player, self.box_group)
+            brick = self.get_vertical_collision(self.brick_group)
+            box = self.get_vertical_collision(self.box_group)
             brick, box = self.prevent_collision_conflict(brick, box)
         else:
             brick, box = False, False
@@ -473,6 +473,16 @@ class Level(tools.State):
             else:
                 sprite1 = False
         return sprite1, sprite2
+    
+    def get_vertical_collision(self, group):
+        sprites = pg.sprite.spritecollide(self.player, group, False)
+        if not sprites:
+            return None
+        player_center = self.player.rect.centery
+        ceilings = [sprite for sprite in sprites if player_center >= sprite.rect.centery]
+        if ceilings:
+            return max(ceilings, key=lambda sprite: sprite.rect.bottom)
+        return min(sprites, key=lambda sprite: sprite.rect.top)
         
     def adjust_player_for_y_collisions(self, sprite):
         if self.player.rect.top > sprite.rect.top:
@@ -586,16 +596,12 @@ class Level(tools.State):
     def update_viewport(self):
         if self.in_frozen_state():
             return
-        third = self.viewport.x + self.viewport.w//3
-        player_center = self.player.rect.centerx
-        
-        if (self.player.x_vel > 0 and 
-            player_center >= third and
-            self.viewport.right < self.end_x):
-            self.viewport.x += round(self.player.x_vel)
-        elif self.player.x_vel < 0 and self.viewport.x > self.start_x:
-            self.viewport.x += round(self.player.x_vel)
-    
+
+        offset = self.viewport.w // 3
+        target = self.player.rect.centerx - offset
+        target = max(self.start_x, min(target, self.end_x - self.viewport.w))
+        self.viewport.x = target
+
     def move_to_dying_group(self, group, sprite):
         group.remove(sprite)
         self.dying_group.add(sprite)

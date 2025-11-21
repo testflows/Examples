@@ -353,10 +353,8 @@ class Propositions:
             return abs(movement) > self.max_small_vertical_move
 
     def entering_horizontal_pipe(self, mario, state):
-        return self.model.collides_with_horizontal_pipe(
-            mario, state
-        )
-    
+        return self.model.collides_with_horizontal_pipe(mario, state)
+
     def collides_with_solid_objects(self, mario, state):
         return self.model.has_collision(mario, state, objects=self.model.solid_objects)
 
@@ -698,7 +696,9 @@ class SafetyProperties(Propositions):
         """Check if Mario does not overlap with solid objects."""
 
         if self.entering_horizontal_pipe(behavior.mario_now, behavior.now):
-            debug("Mario is entering a horizontal pipe, skipping overlap with solid objects check")
+            debug(
+                "Mario is entering a horizontal pipe, skipping overlap with solid objects check"
+            )
             return
 
         self.model.assert_with_success(
@@ -708,10 +708,12 @@ class SafetyProperties(Propositions):
 
     def check_does_not_slideout_of_viewport(self, behavior):
         """Ensure Mario remains visible within the camera viewport."""
+
         self.model.assert_with_success(
             self.is_within_viewport(behavior),
             "Mario stays within the viewport",
         )
+
 
 class Movement(Model):
     """Mario movement model."""

@@ -75,22 +75,16 @@ class Model:
         return element.box.x < state.start_x
 
     def is_visible_in_viewport(self, element, state):
-        """Return True if the element intersects the current viewport bounds."""
+        """Return True if the element stays within the viewport horizontally."""
         viewport = getattr(state, "viewport", None)
         if viewport is None or element is None:
             return True
 
-        vx, vy, vw, vh = viewport
+        vx, _, vw, _ = viewport
         element_rect = element.box
         right = vx + vw
-        bottom = vy + vh
 
-        return (
-            element_rect.left >= vx
-            and element_rect.right <= right
-            and element_rect.top >= vy
-            and element_rect.bottom <= bottom
-        )
+        return element_rect.left >= vx and element_rect.right <= right
 
     def has_right_touch(self, element, element_before, state, objects=None):
         """Check if element has collision on the right side."""

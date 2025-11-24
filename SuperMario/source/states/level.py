@@ -421,6 +421,7 @@ class Level(tools.State):
         elif brick:
             self.adjust_player_for_y_collisions(brick)
         elif ground_step_pipe:
+            ground_step_pipe = self.get_vertical_collision(self.ground_step_pipe_group)
             self.adjust_player_for_y_collisions(ground_step_pipe)
         elif enemy:
             if self.player.invincible:

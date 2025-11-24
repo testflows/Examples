@@ -127,9 +127,9 @@ class Propositions:
         self.max_recently_run = 45
         self.max_recently_in_the_air = 45
         self.max_was_in_transition = 55
-        self.max_small_horizontal_move = 50
+        self.max_small_horizontal_move = 100
         self.max_big_horizontal_move = 100
-        self.max_small_vertical_move = 50
+        self.max_small_vertical_move = 100
         self.max_big_vertical_move = 100
 
     def was_in_transition(self, behavior):

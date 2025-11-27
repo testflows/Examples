@@ -6,6 +6,7 @@ This is a [TestFlows](https://testflows.com) example that demonstrates automated
 
 * Original game code: https://github.com/marblexu/PythonSuperMario
 * Based on: https://github.com/justinmeister/Mario-Level-1
+* Autonomous testing algorithm proposed by: https://antithesis.com/blog/sdtalk/
 
 ## 📚 References
 

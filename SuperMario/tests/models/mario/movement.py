@@ -372,15 +372,9 @@ class CausalProperties(Propositions):
         if self.moved_right(actual_movement):
             # Skip check if there's a collision causing position adjustment
             # Position adjustments can cause large position jumps that don't reflect actual velocity
-            if behavior.has_horizontal_collision_adjustment:
+            if behavior.has_horizontal_collision_adjustment or behavior.had_horizontal_collision_adjustment:
                 debug(
                     "Collision adjustment is expected, skipping right movement cause check"
-                )
-                return
-
-            if behavior.had_horizontal_collision_adjustment:
-                debug(
-                    "Just had collision adjustment, skipping right movement cause check"
                 )
                 return
 
@@ -399,15 +393,9 @@ class CausalProperties(Propositions):
         if self.moved_left(actual_movement):
             # Skip check if there's a collision causing position adjustment
             # Position adjustments can cause large position jumps that don't reflect actual velocity
-            if behavior.has_horizontal_collision_adjustment:
+            if behavior.has_horizontal_collision_adjustment or behavior.had_horizontal_collision_adjustment:
                 debug(
                     "Collision adjustment is expected, skipping left movement cause check"
-                )
-                return
-
-            if behavior.had_horizontal_collision_adjustment:
-                debug(
-                    "Just had collision adjustment, skipping left movement cause check"
                 )
                 return
 

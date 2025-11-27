@@ -17,7 +17,7 @@ This is a [TestFlows](https://testflows.com) example that demonstrates automated
   Delves into the theory behind behavior models and its application in testing.
 
 * [Testing Super Mario Using a Behavior Model Autonomously (Part 1)](https://testflows.com/blog/testing-super-mario-using-a-behavior-model-autonomously-part1/).
-  Demonstrates how to implement autonomous exploration, covering weighted input generation, path scoring/cleaning, instrumentation tricks, and beating all four levels without manual input.
+  Demonstrates how to implement autonomous exploration described by Antithesis, covering weighted input generation, path scoring/cleaning, instrumentation tricks, and beating all four levels without manual input.
 
 * [Testing Super Mario Using a Behavior Model Autonomously (Part 2)](https://testflows.com/blog/testing-super-mario-using-a-behavior-model-autonomously-part2/).
   Combines autonomous explorer with the updated behavior model, adds engine observability, saves failed paths, and uses bidirectional testing to fix both model and game bugs.

@@ -372,15 +372,12 @@ class CausalProperties(Propositions):
         if self.moved_right(actual_movement):
             # Skip check if there's a collision causing position adjustment
             # Position adjustments can cause large position jumps that don't reflect actual velocity
-            if behavior.has_horizontal_collision_adjustment:
+            if (
+                behavior.has_horizontal_collision_adjustment
+                or behavior.had_horizontal_collision_adjustment
+            ):
                 debug(
                     "Collision adjustment is expected, skipping right movement cause check"
-                )
-                return
-
-            if behavior.had_horizontal_collision_adjustment:
-                debug(
-                    "Just had collision adjustment, skipping right movement cause check"
                 )
                 return
 
@@ -399,15 +396,12 @@ class CausalProperties(Propositions):
         if self.moved_left(actual_movement):
             # Skip check if there's a collision causing position adjustment
             # Position adjustments can cause large position jumps that don't reflect actual velocity
-            if behavior.has_horizontal_collision_adjustment:
+            if (
+                behavior.has_horizontal_collision_adjustment
+                or behavior.had_horizontal_collision_adjustment
+            ):
                 debug(
                     "Collision adjustment is expected, skipping left movement cause check"
-                )
-                return
-
-            if behavior.had_horizontal_collision_adjustment:
-                debug(
-                    "Just had collision adjustment, skipping left movement cause check"
                 )
                 return
 
@@ -617,6 +611,52 @@ class LivenessProperties(Propositions):
 class SafetyProperties(Propositions):
     """Safety properties for Mario's movement."""
 
+    def check_horizontal_position_update(self, behavior):
+        """Check correct horizontal position update."""
+
+        mario_now = behavior.mario_now
+        mario_before = behavior.mario_before
+        now = behavior.now
+
+        if (
+            behavior.has_horizontal_collision_adjustment
+            or behavior.had_horizontal_collision_adjustment
+        ):
+            debug(
+                "Collision adjustment is expected, skipping horizontal position update check"
+            )
+            return
+
+        new_centerx = mario_before.box.centerx + round(now.player.x_vel)
+
+        self.model.assert_with_success(
+            mario_now.box.centerx == new_centerx,
+            f"Mario's horizontal position {mario_now.box.centerx-mario_before.box.centerx} was updated correctly",
+        )
+
+    def check_vertical_position_update(self, behavior):
+        """Check correct vertical position update."""
+
+        mario_now = behavior.mario_now
+        mario_before = behavior.mario_before
+        now = behavior.now
+
+        if (
+            behavior.has_vertical_collision_adjustment
+            or behavior.had_vertical_collision_adjustment
+        ):
+            debug(
+                "Collision adjustment is expected, skipping vertical position update check"
+            )
+            return
+
+        new_bottomy = mario_before.box.bottom + round(now.player.y_vel)
+
+        self.model.assert_with_success(
+            mario_now.box.bottom == new_bottomy,
+            f"Mario's vertical position {mario_now.box.bottom-mario_before.box.bottom} was updated correctly",
+        )
+
     def check_does_not_move_past_left_boundary(self, behavior):
         """Check if Mario does not move past the boundary."""
 
@@ -746,11 +786,14 @@ class Movement(Model):
             # Validate what Mario should eventually do
             self.liveness.check_starts_moving(behavior)
 
+            # Validate what Mario should do
+            self.safety.check_horizontal_position_update(behavior)
+            self.safety.check_vertical_position_update(behavior)
+
+            # Validate what Mario should never do
             self.safety.check_does_not_exceed_max_velocity(behavior)
             self.safety.check_does_not_exceed_max_vertical_velocity(behavior)
             self.safety.check_does_not_exceed_max_position_adjustment(behavior)
-
-            # Validate what Mario should never do
             self.safety.check_does_not_move_past_left_boundary(behavior)
             self.safety.check_does_not_move_past_right_boundary(behavior)
             self.safety.check_does_not_overlap_with_solid_objects(behavior)
